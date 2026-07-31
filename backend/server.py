@@ -4,18 +4,20 @@ from __future__ import annotations
 import os
 import re
 import uuid
-import random
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Optional, Literal
 
+from dotenv import load_dotenv
+
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / ".env")
+
 import bcrypt
 import jwt
-import resend
-from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -31,27 +33,91 @@ from seed_data import (
     default_settings,
     upload_url,
 )
+from email_service import email_service, email_configured
+from security_utils import (
+    gen_otp,
+    hash_otp,
+    verify_otp_hash,
+    detect_image,
+    ensure_indexes,
+    check_rate_limit,
+    check_otp_cooldown,
+    OTP_TTL_MINUTES,
+    OTP_MAX_ATTEMPTS,
+    OTP_SEND_LIMIT,
+    OTP_SEND_WINDOW_MIN,
+    OTP_SEND_COOLDOWN_SEC,
+    LOGIN_MAX_ATTEMPTS,
+    LOGIN_WINDOW_MIN,
+    ALLOWED_IMAGE_MIME,
+)
 
 
 # ─── Setup ──────────────────────────────────────────────────────────────────
-ROOT_DIR = Path(__file__).parent
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
-load_dotenv(ROOT_DIR / ".env")
 
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-JWT_SECRET = os.environ.get("JWT_SECRET", "paper-loop-dev-secret-change-me")
-JWT_ALG = "HS256"
-JWT_TTL_HOURS = 24 * 14
-
 APP_ENV = os.environ.get("APP_ENV", "development")
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "Paper & Loop <onboarding@resend.dev>")
-BRAND_NAME = "Paper & Loop"
+JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()
+if not JWT_SECRET:
+    if APP_ENV == "production":
+        raise RuntimeError("JWT_SECRET must be set in production")
+    JWT_SECRET = "paper-loop-dev-secret-change-me"
+    logging.getLogger("paperloop").warning("Using insecure default JWT_SECRET — set JWT_SECRET before production")
 
-if RESEND_API_KEY:
-    resend.api_key = RESEND_API_KEY
+JWT_ALG = "HS256"
+JWT_TTL_HOURS = int(os.environ.get("JWT_TTL_HOURS", str(24 * 7)))  # 7 days default
+BRAND_NAME = "Paper & Loop"
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "ritheeshvaran2007@gmail.com").strip().lower()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "").strip()
+
+if APP_ENV == "production" and not email_configured():
+    logging.getLogger("paperloop").error(
+        "PRODUCTION: No email provider configured. Set RESEND_API_KEY or SMTP_* — OTP will fail until configured."
+    )
+
+
+def _mongo_cluster_label(url: str) -> str:
+    """Return cluster/host for logs — never includes credentials."""
+    try:
+        if "@" in url:
+            host_part = url.split("@", 1)[1]
+        else:
+            host_part = url.split("://", 1)[-1]
+        return host_part.split("/")[0].split("?")[0]
+    except Exception:
+        return "unknown"
+
+
+async def _verify_mongodb_connection() -> None:
+    """Ping MongoDB and log connection outcome (Atlas-safe, no secrets in logs)."""
+    cluster = _mongo_cluster_label(MONGO_URL)
+    is_atlas = MONGO_URL.startswith("mongodb+srv://")
+    try:
+        await client.admin.command("ping")
+        if is_atlas:
+            log.info(
+                "Connected to MongoDB Atlas successfully. database=%s cluster=%s",
+                DB_NAME,
+                cluster,
+            )
+        else:
+            log.info(
+                "Connected to MongoDB successfully. database=%s host=%s",
+                DB_NAME,
+                cluster,
+            )
+    except Exception as exc:
+        log.error(
+            "MongoDB connection failed. database=%s cluster=%s error=%s",
+            DB_NAME,
+            cluster,
+            exc,
+        )
+        raise RuntimeError(f"MongoDB connection failed ({cluster})") from exc
+
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -74,15 +140,26 @@ def hash_pw(pw: str) -> str: return bcrypt.hashpw(pw.encode(), bcrypt.gensalt())
 def verify_pw(pw: str, hashed: str) -> bool:
     try: return bcrypt.checkpw(pw.encode(), hashed.encode())
     except Exception: return False
-def make_token(user_id: str, role: str) -> str:
-    return jwt.encode({"sub": user_id, "role": role,
-                       "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_TTL_HOURS),
-                       "iat": datetime.now(timezone.utc)}, JWT_SECRET, algorithm=JWT_ALG)
+def make_token(user_id: str, role: str, token_version: int = 0) -> str:
+    return jwt.encode({
+        "sub": user_id,
+        "role": role,
+        "tv": token_version,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_TTL_HOURS),
+        "iat": datetime.now(timezone.utc),
+    }, JWT_SECRET, algorithm=JWT_ALG)
 def decode_token(token: str) -> dict:
     return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
 def strip_id(doc):
     if doc is None: return None
     doc.pop("_id", None); return doc
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
 
 
 async def get_current_user(cred: HTTPAuthorizationCredentials = Depends(bearer)) -> dict:
@@ -91,44 +168,14 @@ async def get_current_user(cred: HTTPAuthorizationCredentials = Depends(bearer))
     except jwt.PyJWTError: raise HTTPException(401, "Invalid token")
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0, "password_hash": 0})
     if not user or user.get("is_blocked"): raise HTTPException(401, "User not found or blocked")
+    if int(payload.get("tv", 0)) != int(user.get("token_version", 0)):
+        raise HTTPException(401, "Session expired — please sign in again")
     return user
 
 
 async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user.get("role") != "admin": raise HTTPException(403, "Admin only")
     return user
-
-
-# ─── Email helper ───────────────────────────────────────────────────────────
-async def send_email(to: str, subject: str, html: str) -> dict:
-    """Send transactional email. Returns { status, id?, dev_content? }.
-    Tries Resend if configured; else logs the payload."""
-    if RESEND_API_KEY:
-        try:
-            params = {"from": SENDER_EMAIL, "to": [to], "subject": subject, "html": html}
-            resp = await asyncio.to_thread(resend.Emails.send, params)
-            log.info("Email sent via Resend: %s → %s", resp.get("id"), to)
-            return {"status": "sent", "id": resp.get("id")}
-        except Exception as e:
-            log.exception("Resend failed: %s", e)
-    log.warning("EMAIL[%s]: to=%s subject=%s", APP_ENV, to, subject)
-    log.info("EMAIL HTML: %s", html[:400])
-    return {"status": "logged"}
-
-
-def _otp_html(code: str, purpose: str) -> str:
-    verb = "verify your email" if purpose == "registration" else "reset your password"
-    return f"""
-    <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; background: #0A0A0A; padding: 40px 20px; color: #fff;">
-      <div style="max-width: 480px; margin: 0 auto; background: #141414; padding: 32px; border: 1px solid #2A2A2A;">
-        <div style="font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: #FF6A00; margin-bottom: 12px;">Paper &amp; Loop</div>
-        <h1 style="font-size: 24px; margin: 0 0 8px; letter-spacing: -0.02em;">Your code to {verb}</h1>
-        <p style="color: #B8B8B4; margin: 0 0 24px;">Use the 6-digit code below. It expires in 10 minutes.</p>
-        <div style="font-size: 42px; letter-spacing: 12px; font-weight: 700; padding: 16px 24px; background: #0A0A0A; border: 1px solid #FF6A00; display: inline-block; color: #FF6A00;">{code}</div>
-        <p style="color: #8A8A85; font-size: 12px; margin-top: 32px;">Didn't request this? Ignore this email — your account stays untouched.</p>
-      </div>
-    </div>
-    """
 
 
 # ─── Models ─────────────────────────────────────────────────────────────────
@@ -139,21 +186,21 @@ class SendOtpInput(BaseModel):
 
 class VerifyOtpInput(BaseModel):
     email: EmailStr
-    code: str
+    code: str = Field(min_length=6, max_length=8)
     purpose: Literal["registration", "password_reset"] = "registration"
 
 
 class RegisterInput(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=6)
-    name: str
+    password: str = Field(min_length=8, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
     phone: str = ""
     address_line1: str = ""
     address_line2: str = ""
     city: str = ""
     state: str = ""
     pincode: str = ""
-    otp_token: Optional[str] = None  # returned by verify-otp
+    otp_token: str  # required — returned by verify-otp
 
 
 class LoginInput(BaseModel):
@@ -174,7 +221,7 @@ class ProfileUpdate(BaseModel):
 class ResetPasswordInput(BaseModel):
     email: EmailStr
     otp_token: str
-    new_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class CategoryInput(BaseModel):
@@ -222,11 +269,17 @@ class CheckoutInput(BaseModel):
 
 
 class SubmitPaymentInput(BaseModel):
-    transaction_id: str
+    transaction_id: str = Field(min_length=6, max_length=64)
+    payment_screenshot_url: Optional[str] = None
 
 
 class UpdateOrderStatusInput(BaseModel):
     status: str
+    note: Optional[str] = None
+
+
+class PaymentDecisionInput(BaseModel):
+    note: Optional[str] = ""
     note: Optional[str] = None
 
 
@@ -251,6 +304,10 @@ class SettingsUpdate(BaseModel):
 class NewsletterInput(BaseModel):
     email: EmailStr
     source: str = "footer"
+
+
+class TestEmailInput(BaseModel):
+    email: EmailStr
 
 
 class RestockAlertInput(BaseModel):
@@ -290,123 +347,218 @@ ORDER_FLOW = ["placed", "payment_under_validation", "approved",
 
 
 # ─── OTP Endpoints ──────────────────────────────────────────────────────────
-def _gen_otp() -> str:
-    return f"{random.randint(0, 999999):06d}"
+GENERIC_OTP_SENT = {
+    "sent": True,
+    "expires_in": OTP_TTL_MINUTES * 60,
+    "message": "If that email can receive a code, one has been sent.",
+}
 
 
-@api.post("/auth/send-otp")
-async def send_otp(inp: SendOtpInput):
-    email = inp.email.lower()
-    if inp.purpose == "registration":
-        existing = await db.users.find_one({"email": email})
-        if existing:
-            raise HTTPException(400, "Email already registered — sign in instead")
-    else:
-        if not await db.users.find_one({"email": email}):
-            raise HTTPException(404, "No account with that email")
-    # Rate-limit: max 5 per 10 minutes
-    recent = await db.otp_verifications.count_documents({
-        "email": email, "purpose": inp.purpose,
-        "created_at": {"$gte": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()},
-    })
-    if recent >= 5:
-        raise HTTPException(429, "Too many attempts. Try again in a bit.")
-    code = _gen_otp()
-    doc = {
-        "id": new_id(),
-        "email": email,
-        "purpose": inp.purpose,
-        "code_hash": hash_pw(code),
-        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
-        "verified_at": None,
-        "consumed": False,
-        "attempts": 0,
-        "created_at": now_iso(),
-    }
-    await db.otp_verifications.insert_one(doc)
-    email_res = await send_email(email,
-        f"Your {BRAND_NAME} verification code: {code}",
-        _otp_html(code, inp.purpose))
-    resp: dict = {"sent": True, "expires_in": 600, "delivery": email_res["status"]}
-    if APP_ENV == "development" and email_res["status"] != "sent":
-        # Dev fallback so full-stack tests can proceed without external email
-        resp["dev_code"] = code
-    return resp
-
-
-@api.post("/auth/verify-otp")
-async def verify_otp(inp: VerifyOtpInput):
-    email = inp.email.lower()
-    doc = await db.otp_verifications.find_one({
-        "email": email, "purpose": inp.purpose, "consumed": False,
-    }, sort=[("created_at", -1)])
-    if not doc:
-        raise HTTPException(404, "No active OTP. Request a new code.")
-    if doc.get("attempts", 0) >= 5:
-        raise HTTPException(429, "Too many attempts. Request a new code.")
-    if datetime.fromisoformat(doc["expires_at"]) < datetime.now(timezone.utc):
-        raise HTTPException(400, "Code expired. Request a new one.")
-    ok = verify_pw(inp.code.strip(), doc["code_hash"])
-    if not ok:
-        await db.otp_verifications.update_one({"id": doc["id"]}, {"$inc": {"attempts": 1}})
-        raise HTTPException(400, "Incorrect code")
-    # Mint a short-lived otp_token proving verification (10 min)
-    token = jwt.encode({
-        "email": email, "purpose": inp.purpose,
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
-    }, JWT_SECRET, algorithm=JWT_ALG)
-    await db.otp_verifications.update_one(
-        {"id": doc["id"]},
-        {"$set": {"verified_at": now_iso(), "consumed": True}},
-    )
-    return {"verified": True, "otp_token": token}
-
-
-def _verify_otp_token(token: str, email: str, purpose: str) -> None:
+async def _consume_otp_token(token: str, email: str, purpose: str) -> None:
+    """Validate otp_token JWT and mark jti single-use (prevents replay)."""
     try:
         payload = decode_token(token)
     except jwt.PyJWTError:
         raise HTTPException(400, "OTP verification expired or invalid")
     if payload.get("email") != email.lower() or payload.get("purpose") != purpose:
         raise HTTPException(400, "OTP verification mismatch")
+    jti = payload.get("jti")
+    if not jti:
+        raise HTTPException(400, "OTP verification expired or invalid")
+    existing = await db.otp_tokens.find_one({"jti": jti})
+    if not existing or existing.get("consumed"):
+        raise HTTPException(400, "OTP verification already used or invalid")
+    await db.otp_tokens.update_one(
+        {"jti": jti},
+        {"$set": {"consumed": True, "consumed_at": now_iso()}},
+    )
+
+
+@api.post("/auth/send-otp")
+async def send_otp(inp: SendOtpInput, request: Request):
+    email = inp.email.lower().strip()
+    ip = _client_ip(request)
+
+    log.info("OTP requested email=%s purpose=%s ip=%s", email, inp.purpose, ip)
+
+    allowed, retry_after = await check_otp_cooldown(db, email, inp.purpose)
+    if not allowed:
+        raise HTTPException(
+            429,
+            detail={"message": f"Please wait {retry_after}s before requesting another code.", "retry_after": retry_after},
+        )
+
+    if not await check_rate_limit(db, f"otp-email:{email}:{inp.purpose}", OTP_SEND_LIMIT, OTP_SEND_WINDOW_MIN):
+        raise HTTPException(429, "Too many codes sent to this email. Try again in an hour.")
+    if not await check_rate_limit(db, f"otp-ip:{ip}", OTP_SEND_LIMIT * 3, OTP_SEND_WINDOW_MIN):
+        raise HTTPException(429, "Too many attempts from this network. Try again later.")
+
+    # Anti-enumeration: always return the same success shape when possible
+    existing = await db.users.find_one({"email": email})
+    should_send = False
+    if inp.purpose == "registration":
+        should_send = existing is None
+    else:  # password_reset
+        should_send = existing is not None
+
+    if not should_send:
+        log.info("OTP skipped (anti-enumeration) email=%s purpose=%s", email, inp.purpose)
+        return {**GENERIC_OTP_SENT, "delivery": "skipped", "retry_after": OTP_SEND_COOLDOWN_SEC}
+
+    if APP_ENV == "production" and not email_configured():
+        log.error("OTP send blocked — email provider not configured")
+        raise HTTPException(503, "Email service unavailable. Try again later.")
+
+    code = gen_otp()
+    expires = datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MINUTES)
+    # Replace any existing unused codes for this email+purpose
+    await db.otp_verifications.delete_many(
+        {"email": email, "purpose": inp.purpose, "consumed": False},
+    )
+    doc = {
+        "id": new_id(),
+        "email": email,
+        "purpose": inp.purpose,
+        "code_hash": hash_otp(code, JWT_SECRET),
+        "expires_at": expires,
+        "verified_at": None,
+        "consumed": False,
+        "attempts": 0,
+        "created_at": now_iso(),
+        "ip": ip,
+    }
+    await db.otp_verifications.insert_one(doc)
+
+    email_res = await email_service.send_otp_email(email, code, inp.purpose)
+    if email_res.get("status") != "sent":
+        log.error("OTP send failed email=%s purpose=%s error=%s", email, inp.purpose, email_res.get("error"))
+        if APP_ENV == "production":
+            raise HTTPException(503, "Could not send verification email. Try again shortly.")
+        return {
+            **GENERIC_OTP_SENT,
+            "delivery": email_res.get("status"),
+            "retry_after": OTP_SEND_COOLDOWN_SEC,
+            "dev_code": code,
+            "warning": "Email delivery failed in development — use dev_code to verify.",
+        }
+
+    log.info("OTP sent email=%s purpose=%s provider=%s", email, inp.purpose, email_res.get("provider"))
+    resp = {**GENERIC_OTP_SENT, "delivery": "sent", "retry_after": OTP_SEND_COOLDOWN_SEC}
+    if APP_ENV != "production":
+        resp["dev_code"] = code  # local/test helper — never returned in production
+    return resp
+
+
+@api.post("/auth/verify-otp")
+async def verify_otp(inp: VerifyOtpInput, request: Request):
+    email = inp.email.lower().strip()
+    ip = _client_ip(request)
+    if not await check_rate_limit(db, f"otp-verify:{email}:{ip}", 20, 10):
+        raise HTTPException(429, "Too many attempts. Try again in a bit.")
+
+    doc = await db.otp_verifications.find_one({
+        "email": email, "purpose": inp.purpose, "consumed": False,
+    }, sort=[("created_at", -1)])
+    if not doc:
+        raise HTTPException(400, "Invalid or expired code. Request a new one.")
+    if doc.get("attempts", 0) >= OTP_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many attempts. Request a new code.")
+
+    expires_at = doc["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(400, "Code expired. Request a new one.")
+
+    # Support both new HMAC hashes and legacy bcrypt hashes during transition
+    code = inp.code.strip()
+    ok = False
+    digest = doc["code_hash"]
+    if len(digest) == 64 and all(c in "0123456789abcdef" for c in digest.lower()):
+        ok = verify_otp_hash(code, digest, JWT_SECRET)
+    else:
+        ok = verify_pw(code, digest)
+    if not ok:
+        await db.otp_verifications.update_one({"id": doc["id"]}, {"$inc": {"attempts": 1}})
+        remaining = OTP_MAX_ATTEMPTS - doc.get("attempts", 0) - 1
+        log.info("OTP verify failed email=%s purpose=%s attempts_left=%s", email, inp.purpose, remaining)
+        raise HTTPException(400, "Incorrect code")
+
+    jti = new_id()
+    token_exp = datetime.now(timezone.utc) + timedelta(minutes=OTP_TTL_MINUTES)
+    token = jwt.encode({
+        "email": email,
+        "purpose": inp.purpose,
+        "jti": jti,
+        "exp": token_exp,
+    }, JWT_SECRET, algorithm=JWT_ALG)
+    await db.otp_tokens.insert_one({
+        "jti": jti,
+        "email": email,
+        "purpose": inp.purpose,
+        "consumed": False,
+        "expires_at": token_exp,
+        "created_at": now_iso(),
+    })
+    await db.otp_verifications.delete_one({"id": doc["id"]})
+    log.info("OTP verified email=%s purpose=%s", email, inp.purpose)
+    return {"verified": True, "otp_token": token}
 
 
 # ─── Auth Routes ────────────────────────────────────────────────────────────
 @api.post("/auth/register")
 async def register(inp: RegisterInput):
-    email = inp.email.lower()
+    email = inp.email.lower().strip()
     if await db.users.find_one({"email": email}):
-        raise HTTPException(400, "Email already registered")
-    # Enforce OTP verification if an otp_token was provided or in prod
-    if inp.otp_token:
-        _verify_otp_token(inp.otp_token, email, "registration")
+        raise HTTPException(400, "Unable to create account with that email")
+    await _consume_otp_token(inp.otp_token, email, "registration")
+    # Only the configured ADMIN_EMAIL may ever be admin — never via self-register
+    role = "customer"
     user = {
         "id": new_id(), "email": email,
         "password_hash": hash_pw(inp.password),
-        "name": inp.name, "phone": inp.phone,
+        "name": inp.name.strip(), "phone": inp.phone,
         "address_line1": inp.address_line1, "address_line2": inp.address_line2,
         "city": inp.city, "state": inp.state, "pincode": inp.pincode,
-        "role": "customer", "is_blocked": False,
-        "email_verified": bool(inp.otp_token),
+        "role": role, "is_blocked": False,
+        "email_verified": True,
+        "token_version": 0,
         "created_at": now_iso(),
     }
-    await db.users.insert_one(user)
-    token = make_token(user["id"], user["role"])
+    try:
+        await db.users.insert_one(user)
+    except Exception:
+        raise HTTPException(400, "Unable to create account with that email")
+    token = make_token(user["id"], user["role"], 0)
     user.pop("password_hash", None); user.pop("_id", None)
-    # Welcome email (fire-and-forget)
-    asyncio.create_task(send_email(email, f"Welcome to {BRAND_NAME}",
+    asyncio.create_task(email_service.send(
+        email,
+        f"Welcome to {BRAND_NAME}",
         f"<div style='font-family:sans-serif;padding:20px'><h2>Welcome, {inp.name}.</h2>"
-        f"<p>Your account is live. First drop alerts are on their way.</p></div>"))
+        f"<p>Your account is live. First drop alerts are on their way.</p></div>",
+    ))
     return {"token": token, "user": user}
 
 
 @api.post("/auth/login")
-async def login(inp: LoginInput):
-    user = await db.users.find_one({"email": inp.email.lower()})
-    if not user: raise HTTPException(404, "No account found with that email")
-    if not verify_pw(inp.password, user["password_hash"]): raise HTTPException(401, "Password doesn't match")
-    if user.get("is_blocked"): raise HTTPException(403, "Account blocked")
-    token = make_token(user["id"], user["role"])
+async def login(inp: LoginInput, request: Request):
+    email = inp.email.lower().strip()
+    ip = _client_ip(request)
+    if not await check_rate_limit(db, f"login:{email}", LOGIN_MAX_ATTEMPTS, LOGIN_WINDOW_MIN):
+        raise HTTPException(429, "Too many login attempts. Try again later.")
+    if not await check_rate_limit(db, f"login-ip:{ip}", LOGIN_MAX_ATTEMPTS * 3, LOGIN_WINDOW_MIN):
+        raise HTTPException(429, "Too many login attempts. Try again later.")
+
+    user = await db.users.find_one({"email": email})
+    # Uniform error — prevent account enumeration
+    invalid = HTTPException(401, "Invalid email or password")
+    if not user or not verify_pw(inp.password, user["password_hash"]):
+        raise invalid
+    if user.get("is_blocked"):
+        raise HTTPException(403, "Account suspended. Contact support.")
+    token = make_token(user["id"], user["role"], int(user.get("token_version", 0)))
     user.pop("password_hash", None); user.pop("_id", None)
     return {"token": token, "user": user}
 
@@ -424,14 +576,32 @@ async def update_me(inp: ProfileUpdate, user: dict = Depends(get_current_user)):
 
 @api.post("/auth/reset-password")
 async def reset_password(inp: ResetPasswordInput):
-    _verify_otp_token(inp.otp_token, inp.email, "password_reset")
+    email = inp.email.lower().strip()
+    await _consume_otp_token(inp.otp_token, email, "password_reset")
     result = await db.users.update_one(
-        {"email": inp.email.lower()},
-        {"$set": {"password_hash": hash_pw(inp.new_password)}},
+        {"email": email},
+        {
+            "$set": {"password_hash": hash_pw(inp.new_password)},
+            "$inc": {"token_version": 1},  # invalidate existing sessions
+        },
     )
     if result.matched_count == 0:
-        raise HTTPException(404, "No account with that email")
+        # Same generic message — token already consumed so don't leak
+        raise HTTPException(400, "Unable to reset password")
     return {"reset": True}
+
+
+# ─── Debug (non-production) ─────────────────────────────────────────────────
+@api.post("/debug/test-email")
+async def debug_test_email(inp: TestEmailInput):
+    if APP_ENV == "production":
+        raise HTTPException(404, "Not found")
+    if not email_configured():
+        raise HTTPException(503, "Email provider not configured. Set RESEND_API_KEY in backend/.env")
+    result = await email_service.send_test_email(inp.email.lower().strip())
+    if result.get("status") != "sent":
+        raise HTTPException(502, f"Email delivery failed: {result.get('error', 'unknown')}")
+    return {"sent": True, "to": inp.email, "provider": result.get("provider")}
 
 
 # ─── Categories ─────────────────────────────────────────────────────────────
@@ -549,20 +719,54 @@ async def delete_product(pid: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
-# ─── Product image upload (base64 or file → served under /uploads) ──────────
-@api.post("/admin/upload")
-async def upload_file(file: UploadFile = File(...), _: dict = Depends(require_admin)):
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(400, "Only image uploads are allowed")
-    ext = (file.filename or "img.jpg").rsplit(".", 1)[-1].lower()[:6]
-    fname = f"{new_id()}.{ext}"
-    dest = UPLOAD_DIR / fname
+# ─── Image upload (admin + payment proofs) ──────────────────────────────────
+async def _save_validated_image(file: UploadFile, *, subdir: str = "") -> str:
     content = await file.read()
     if len(content) > 8 * 1024 * 1024:
         raise HTTPException(400, "File too large (max 8MB)")
+    ext = detect_image(content)
+    if not ext:
+        raise HTTPException(400, "Only JPEG, PNG, WebP, or GIF images are allowed")
+    # Reject SVG / mismatched declared types (magic bytes are source of truth)
+    if file.content_type and file.content_type not in ALLOWED_IMAGE_MIME and file.content_type != "application/octet-stream":
+        if not file.content_type.startswith("image/"):
+            raise HTTPException(400, "Only image uploads are allowed")
+    folder = UPLOAD_DIR / subdir if subdir else UPLOAD_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    fname = f"{new_id()}.{ext}"
+    dest = folder / fname
+    # Prevent path traversal — fname is UUID-generated only
+    if ".." in fname or "/" in fname or "\\" in fname:
+        raise HTTPException(400, "Invalid filename")
     with dest.open("wb") as f:
         f.write(content)
-    return {"url": f"/uploads/{fname}"}
+    rel = f"{subdir}/{fname}" if subdir else fname
+    return f"/uploads/{rel}"
+
+
+@api.post("/admin/upload")
+async def upload_file(file: UploadFile = File(...), _: dict = Depends(require_admin)):
+    url = await _save_validated_image(file)
+    return {"url": url}
+
+
+@api.post("/orders/{order_id}/upload-payment-proof")
+async def upload_payment_proof(
+    order_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    order = await db.orders.find_one({"id": order_id, "user_id": user["id"]})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order["status"] not in ("placed", "payment_under_validation"):
+        raise HTTPException(400, "Order not accepting payment proof")
+    url = await _save_validated_image(file, subdir="payments")
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {"payment_screenshot_url": url, "updated_at": now_iso()}},
+    )
+    return {"url": url}
 
 
 # ─── Cart ───────────────────────────────────────────────────────────────────
@@ -657,6 +861,12 @@ async def _next_order_number() -> str:
 async def checkout(inp: CheckoutInput, user: dict = Depends(get_current_user)):
     cart = await _fetch_cart(user["id"])
     if not cart["items"]: raise HTTPException(400, "Cart is empty")
+    # Stock check before creating order
+    for it in cart["items"]:
+        p = it["product"]
+        stock = int(p.get("stock_quantity") or 0)
+        if stock < it["quantity"]:
+            raise HTTPException(400, f"Insufficient stock for {p.get('name', 'item')}")
     order_id = new_id()
     order = {
         "id": order_id,
@@ -680,7 +890,7 @@ async def checkout(inp: CheckoutInput, user: dict = Depends(get_current_user)):
         "subtotal": cart["subtotal"], "discount_total": cart["discount_total"],
         "delivery": 0.0, "total": cart["total"],
         "status": "placed", "payment_status": "pending",
-        "transaction_id": None, "delivery_date": None,
+        "transaction_id": None, "payment_screenshot_url": None, "delivery_date": None,
         "order_note": inp.order_note,
         "reservation_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=45)).isoformat(),
         "timeline": [{"status": "placed", "at": now_iso(), "note": "Order placed"}],
@@ -688,12 +898,30 @@ async def checkout(inp: CheckoutInput, user: dict = Depends(get_current_user)):
     }
     await db.orders.insert_one(order)
     for it in cart["items"]:
-        await db.products.update_one({"id": it["product_id"]},
-                                     {"$inc": {"stock_quantity": -it["quantity"]}})
+        result = await db.products.update_one(
+            {"id": it["product_id"], "stock_quantity": {"$gte": it["quantity"]}},
+            {"$inc": {"stock_quantity": -it["quantity"]}},
+        )
+        if result.modified_count == 0:
+            # Rollback: cancel order & restore any decremented stock
+            await db.orders.update_one({"id": order_id}, {"$set": {"status": "cancelled"}})
+            raise HTTPException(400, f"Insufficient stock for {it['product']['name']}")
     await db.carts.delete_many({"user_id": user["id"]})
-    asyncio.create_task(send_email(user["email"],
-        f"Order received — {order['order_number']}",
-        f"<p>Hi {user['name']},<br/>Your order <b>{order['order_number']}</b> is placed. Complete the UPI payment to lock it in.</p>"))
+    asyncio.create_task(email_service.send_order_confirmation(
+        user["email"],
+        user["name"],
+        order["order_number"],
+        order["total"],
+        [{"name": it["product_name"], "quantity": it["quantity"], "line_total": it["line_total"]}
+         for it in order["items"]],
+    ))
+    asyncio.create_task(email_service.send_admin_notification(
+        ADMIN_EMAIL,
+        f"New order {order['order_number']}",
+        f"<p>Customer: <b>{user['name']}</b> ({user['email']})</p>"
+        f"<p>Total: <b>₹{order['total']:,.0f}</b></p>",
+        f"New order {order['order_number']} from {user['email']} — ₹{order['total']:,.0f}",
+    ))
     return strip_id(order)
 
 
@@ -703,14 +931,24 @@ async def submit_payment(order_id: str, inp: SubmitPaymentInput, user: dict = De
     if not order: raise HTTPException(404, "Order not found")
     if order["status"] not in ("placed", "payment_under_validation"):
         raise HTTPException(400, "Order not accepting payment update")
+    txn = re.sub(r"[^A-Za-z0-9\-]", "", inp.transaction_id.strip())[:64]
+    if len(txn) < 6:
+        raise HTTPException(400, "Enter a valid transaction ID")
+    patch = {
+        "transaction_id": txn,
+        "status": "payment_under_validation",
+        "payment_status": "under_validation",
+        "updated_at": now_iso(),
+    }
+    if inp.payment_screenshot_url:
+        if not str(inp.payment_screenshot_url).startswith("/uploads/"):
+            raise HTTPException(400, "Invalid payment screenshot URL")
+        patch["payment_screenshot_url"] = inp.payment_screenshot_url
     await db.orders.update_one({"id": order_id}, {
-        "$set": {"transaction_id": inp.transaction_id,
-                 "status": "payment_under_validation",
-                 "payment_status": "under_validation",
-                 "updated_at": now_iso()},
+        "$set": patch,
         "$push": {"timeline": {"status": "payment_under_validation",
                                 "at": now_iso(),
-                                "note": f"Transaction {inp.transaction_id} submitted"}},
+                                "note": f"Transaction {txn} submitted"}},
     })
     return strip_id(await db.orders.find_one({"id": order_id}))
 
@@ -787,7 +1025,7 @@ async def admin_update_status(order_id: str, inp: UpdateOrderStatusInput,
     })
     await _log(admin, "order_status_change", "order", order_id, order["status"], new_status)
     # Notify customer
-    asyncio.create_task(send_email(order["customer_email"],
+    asyncio.create_task(email_service.send(order["customer_email"],
         f"Order update: {order['order_number']} is now {new_status.replace('_', ' ').title()}",
         f"<p>Your order <b>{order['order_number']}</b> moved to <b>{new_status.replace('_', ' ').title()}</b>.</p>"))
     return strip_id(await db.orders.find_one({"id": order_id}))
@@ -801,16 +1039,99 @@ async def admin_set_delivery(order_id: str, inp: SetDeliveryDateInput,
     return strip_id(await db.orders.find_one({"id": order_id}))
 
 
+@api.post("/admin/orders/{order_id}/approve-payment")
+async def admin_approve_payment(order_id: str, inp: PaymentDecisionInput,
+                                admin: dict = Depends(require_admin)):
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order["status"] not in ("placed", "payment_under_validation"):
+        raise HTTPException(400, "Order is not awaiting payment verification")
+    await db.orders.update_one({"id": order_id}, {
+        "$set": {
+            "status": "approved",
+            "payment_status": "verified",
+            "updated_at": now_iso(),
+        },
+        "$push": {"timeline": {
+            "status": "approved",
+            "at": now_iso(),
+            "note": inp.note or "Payment approved",
+            "by": admin["email"],
+        }},
+    })
+    await _log(admin, "payment_approved", "order", order_id, order.get("payment_status"), "verified")
+    asyncio.create_task(email_service.send(
+        order["customer_email"],
+        f"Payment verified — {order['order_number']}",
+        f"<p>Your payment for <b>{order['order_number']}</b> was verified. We're preparing your order.</p>",
+    ))
+    return strip_id(await db.orders.find_one({"id": order_id}))
+
+
+@api.post("/admin/orders/{order_id}/reject-payment")
+async def admin_reject_payment(order_id: str, inp: PaymentDecisionInput,
+                               admin: dict = Depends(require_admin)):
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order["status"] not in ("placed", "payment_under_validation"):
+        raise HTTPException(400, "Order is not awaiting payment verification")
+    await db.orders.update_one({"id": order_id}, {
+        "$set": {
+            "status": "placed",
+            "payment_status": "rejected",
+            "updated_at": now_iso(),
+        },
+        "$push": {"timeline": {
+            "status": "placed",
+            "at": now_iso(),
+            "note": inp.note or "Payment rejected — please resubmit",
+            "by": admin["email"],
+        }},
+    })
+    await _log(admin, "payment_rejected", "order", order_id, order.get("payment_status"), "rejected")
+    asyncio.create_task(email_service.send(
+        order["customer_email"],
+        f"Payment needs attention — {order['order_number']}",
+        f"<p>We could not verify payment for <b>{order['order_number']}</b>. "
+        f"{inp.note or 'Please resubmit a valid UPI transaction ID and screenshot.'}</p>",
+    ))
+    return strip_id(await db.orders.find_one({"id": order_id}))
+
+
 # ─── Admin: Customers ───────────────────────────────────────────────────────
 @api.get("/admin/customers")
-async def admin_list_customers(_: dict = Depends(require_admin)):
-    users = await db.users.find({"role": "customer"},
-                                {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
+async def admin_list_customers(_: dict = Depends(require_admin), q: Optional[str] = None):
+    query: dict = {"role": "customer"}
+    if q:
+        query["$or"] = [
+            {"name": {"$regex": q, "$options": "i"}},
+            {"email": {"$regex": q, "$options": "i"}},
+            {"phone": {"$regex": q, "$options": "i"}},
+        ]
+    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).sort("created_at", -1).to_list(500)
     for u in users:
         orders = await db.orders.find({"user_id": u["id"]}, {"_id": 0}).to_list(500)
         u["order_count"] = len(orders)
         u["total_spent"] = round(sum(o.get("total", 0) for o in orders if o.get("status") != "cancelled"), 2)
     return users
+
+
+@api.put("/admin/customers/{user_id}/block")
+async def admin_block_customer(user_id: str, admin: dict = Depends(require_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user or user.get("role") == "admin":
+        raise HTTPException(404, "Customer not found")
+    if user.get("email", "").lower() == ADMIN_EMAIL:
+        raise HTTPException(400, "Cannot block the primary admin account")
+    blocked = not user.get("is_blocked", False)
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"is_blocked": blocked}, "$inc": {"token_version": 1}},
+    )
+    await _log(admin, "customer_block" if blocked else "customer_unblock", "user", user_id, not blocked, blocked)
+    return strip_id(await db.users.find_one({"id": user_id}, {"password_hash": 0}))
 
 
 # ─── Newsletter, Restock, Testimonials, Gallery, Discounts ──────────────────
@@ -839,7 +1160,7 @@ async def _fire_restock_alerts(product_id: str):
     if not p: return
     alerts = await db.restock_alerts.find({"product_id": product_id, "notified": False}).to_list(500)
     for a in alerts:
-        await send_email(a["email"], f"Back in stock: {p['name']}",
+        await email_service.send(a["email"], f"Back in stock: {p['name']}",
             f"<p><b>{p['name']}</b> is restocked. Grab yours before it disappears again.</p>")
         await db.restock_alerts.update_one({"_id": a["_id"]}, {"$set": {"notified": True, "notified_at": now_iso()}})
 
@@ -1092,23 +1413,79 @@ async def _seed_products_and_assets():
                 await db.gallery_items.update_one({"id": g["id"]}, {"$set": {"image_url": upload_url(fname)}})
 
 
-async def seed_if_empty():
-    admin_email = "ritheeshvaran2007@gmail.com"
-    if not await db.users.find_one({"email": admin_email}):
-        await db.users.insert_one({
-            "id": new_id(), "email": admin_email,
-            "password_hash": hash_pw("admin123"),
-            "name": "Paper & Loop Admin", "phone": "",
-            "role": "admin", "is_blocked": False,
-            "address_line1": "", "address_line2": "",
-            "city": "", "state": "", "pincode": "",
-            "email_verified": True,
-            "created_at": now_iso(),
+async def _ensure_admin_account():
+    """Ensure ADMIN_EMAIL has admin role. Password from ADMIN_PASSWORD env (required in production)."""
+    admin_email = ADMIN_EMAIL
+    existing = await db.users.find_one({"email": admin_email})
+    if existing:
+        patch = {"role": "admin", "email_verified": True, "is_blocked": False}
+        if ADMIN_PASSWORD:
+            patch["password_hash"] = hash_pw(ADMIN_PASSWORD)
+            patch["token_version"] = int(existing.get("token_version", 0)) + 1
+        await db.users.update_one({"email": admin_email}, {"$set": patch})
+        # Demote any other accidental admins
+        await db.users.update_many(
+            {"role": "admin", "email": {"$ne": admin_email}},
+            {"$set": {"role": "customer"}},
+        )
+        log.info("Ensured admin privileges for %s", admin_email)
+        return
+
+    if APP_ENV == "production" and not ADMIN_PASSWORD:
+        log.error("ADMIN_PASSWORD not set — creating admin with temporary password is blocked in production")
+        raise RuntimeError("Set ADMIN_PASSWORD for the primary admin account in production")
+
+    password = ADMIN_PASSWORD or ("" if APP_ENV == "production" else "admin123")
+    if not password:
+        raise RuntimeError("ADMIN_PASSWORD required")
+    if not ADMIN_PASSWORD and APP_ENV != "production":
+        log.warning("Created admin %s with default password — set ADMIN_PASSWORD immediately", admin_email)
+
+    await db.users.insert_one({
+        "id": new_id(), "email": admin_email,
+        "password_hash": hash_pw(password),
+        "name": "Paper & Loop Admin", "phone": "",
+        "role": "admin", "is_blocked": False,
+        "address_line1": "", "address_line2": "",
+        "city": "", "state": "", "pincode": "",
+        "email_verified": True,
+        "token_version": 0,
+        "created_at": now_iso(),
+    })
+    log.info("Seeded admin: %s", admin_email)
+
+
+async def _release_expired_reservations():
+    """Cancel unpaid orders past reservation_expires_at and restore stock."""
+    now = datetime.now(timezone.utc)
+    expired = await db.orders.find({
+        "status": {"$in": ["placed", "payment_under_validation"]},
+        "payment_status": {"$in": ["pending", "under_validation", "rejected"]},
+        "reservation_expires_at": {"$lte": now.isoformat()},
+    }).to_list(200)
+    for order in expired:
+        await db.orders.update_one({"id": order["id"]}, {
+            "$set": {"status": "cancelled", "updated_at": now_iso(), "cancelled_at": now_iso()},
+            "$push": {"timeline": {
+                "status": "cancelled",
+                "at": now_iso(),
+                "note": "Reservation expired — payment not verified in time",
+            }},
         })
-        log.info("Seeded admin: %s", admin_email)
+        for it in order.get("items", []):
+            await db.products.update_one(
+                {"id": it["product_id"]},
+                {"$inc": {"stock_quantity": it["quantity"]}},
+            )
+    if expired:
+        log.info("Released %d expired unpaid reservations", len(expired))
+
+
+async def seed_if_empty():
+    await _ensure_admin_account()
 
     demo_email = "demo@paperandloop.com"
-    if not await db.users.find_one({"email": demo_email}):
+    if APP_ENV != "production" and not await db.users.find_one({"email": demo_email}):
         await db.users.insert_one({
             "id": new_id(), "email": demo_email,
             "password_hash": hash_pw("demo1234"),
@@ -1117,6 +1494,7 @@ async def seed_if_empty():
             "address_line1": "12, MG Road", "address_line2": "Flat 3B",
             "city": "Chennai", "state": "Tamil Nadu", "pincode": "600001",
             "email_verified": True,
+            "token_version": 0,
             "created_at": now_iso(),
         })
 
@@ -1188,7 +1566,10 @@ async def _ensure_brand_assets():
 
 @app.on_event("startup")
 async def on_startup():
+    await _verify_mongodb_connection()
+    await ensure_indexes(db)
     await seed_if_empty()
+    await _release_expired_reservations()
 
 
 @app.on_event("shutdown")
@@ -1198,17 +1579,27 @@ async def on_shutdown():
 
 @api.get("/")
 async def root():
-    return {"name": "Paper & Loop API", "status": "alive", "env": APP_ENV}
+    return {
+        "name": "Paper & Loop API",
+        "status": "alive",
+        "env": APP_ENV,
+        "email_configured": email_configured(),
+    }
 
 
 app.include_router(api)
 # Static uploads — /uploads/ is the canonical public path (Vercel + backend)
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_legacy")
+
+_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
+if APP_ENV == "production" and ("*" in _cors_origins or not _cors_origins):
+    log.error("CORS_ORIGINS must be an explicit allow-list in production")
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_cors_origins if _cors_origins else ["http://localhost:3000"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )

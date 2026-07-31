@@ -36,11 +36,15 @@ Deploy to **Railway** or **Render** with a **persistent disk** for uploads.
 |----------|---------|-------------|
 | `MONGO_URL` | `mongodb+srv://user:pass@cluster...` | Atlas connection string |
 | `DB_NAME` | `paper_loop` | MongoDB database name |
-| `JWT_SECRET` | `<long-random-string>` | Sign JWT tokens (use `openssl rand -hex 32`) |
-| `APP_ENV` | `production` | Disables OTP dev_code in responses |
-| `CORS_ORIGINS` | `https://paperandloop.com,https://www.paperandloop.com` | Comma-separated frontend URLs |
-| `RESEND_API_KEY` | `re_...` | Optional — real OTP & order emails |
-| `SENDER_EMAIL` | `Paper & Loop <hello@paperandloop.com>` | Verified Resend sender |
+| `JWT_SECRET` | `<long-random-string>` | **Required in production** (`openssl rand -hex 32`) |
+| `APP_ENV` | `production` | Disables OTP `dev_code`; enforces email delivery |
+| `CORS_ORIGINS` | `https://paperandloop.com,https://www.paperandloop.com` | Explicit allow-list (never `*`) |
+| `ADMIN_EMAIL` | `ritheeshvaran2007@gmail.com` | Sole admin account (auto-promoted on startup) |
+| `ADMIN_PASSWORD` | `<strong password>` | **Required in production** for admin bootstrap |
+| `RESEND_API_KEY` | `re_...` | **Required for OTP in production** |
+| `FROM_EMAIL` | `Paper & Loop <noreply@paperloop.shop>` | Verified Resend domain sender |
+
+Optional SMTP fallback (local/dev): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
 
 ### Start command
 

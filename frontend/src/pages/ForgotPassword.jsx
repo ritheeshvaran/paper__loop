@@ -7,6 +7,13 @@ import { api } from "@/lib/api";
 import { OtpStep } from "@/pages/Register";
 import { brandAsset } from "@/lib/assets";
 
+const formatApiError = (err) => {
+  const d = err.response?.data?.detail;
+  if (typeof d === "string") return d;
+  if (d?.message) return d.message;
+  return "Something went wrong. Try again.";
+};
+
 const ForgotPassword = () => {
   const nav = useNavigate();
   const [step, setStep] = useState(1);
@@ -20,17 +27,19 @@ const ForgotPassword = () => {
     e?.preventDefault(); setError(""); setBusy(true);
     try {
       const { data } = await api.post("/auth/send-otp", { email, purpose: "password_reset" });
-      toast.success("Code sent to " + email);
+      toast.success("If that email can receive a code, one has been sent.");
       if (data.dev_code) toast.message("Dev code", { description: `OTP: ${data.dev_code}`, duration: 12000 });
       setStep(2);
+      return data.retry_after ?? 60;
     } catch (err) {
-      setError(err.response?.data?.detail || "Couldn't send code.");
+      setError(formatApiError(err));
+      throw err;
     } finally { setBusy(false); }
   };
 
   const reset = async (e) => {
     e.preventDefault(); setError("");
-    if (pw.p1.length < 6) return setError("Password must be at least 6 characters.");
+    if (pw.p1.length < 8) return setError("Password must be at least 8 characters.");
     if (pw.p1 !== pw.p2) return setError("Passwords don't match.");
     try {
       await api.post("/auth/reset-password", { email, otp_token: otpToken, new_password: pw.p1 });
@@ -74,7 +83,7 @@ const ForgotPassword = () => {
           )}
 
           {step === 2 && (
-            <OtpStep email={email} purpose="password_reset" onVerified={(t) => { setOtpToken(t); setStep(3); }} onBack={() => setStep(1)} />
+            <OtpStep email={email} purpose="password_reset" onVerified={(t) => { setOtpToken(t); setStep(3); }} onBack={() => setStep(1)} onResend={sendOtp} />
           )}
 
           {step === 3 && (

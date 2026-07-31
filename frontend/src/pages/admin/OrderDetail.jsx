@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { formatINR, formatDate, statusLabel, statusColor } from "@/lib/format";
+import { resolveMedia } from "@/lib/media";
 import { toast } from "sonner";
 
 const FLOW = ["placed", "payment_under_validation", "approved", "preparing", "packed", "out_for_delivery", "delivered"];
@@ -18,6 +19,22 @@ const OrderDetail = () => {
     catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
   };
 
+  const approvePayment = async () => {
+    try {
+      await api.post(`/admin/orders/${id}/approve-payment`, { note: "Payment verified" });
+      toast.success("Payment approved");
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
+  const rejectPayment = async () => {
+    try {
+      await api.post(`/admin/orders/${id}/reject-payment`, { note: "Payment rejected — please resubmit" });
+      toast.success("Payment rejected");
+      load();
+    } catch (e) { toast.error(e.response?.data?.detail || "Failed"); }
+  };
+
   const setDeliveryDate = async (date) => {
     try { await api.put(`/admin/orders/${id}/delivery-date`, { delivery_date: date }); toast.success("Delivery date set"); load(); }
     catch { toast.error("Failed"); }
@@ -26,6 +43,7 @@ const OrderDetail = () => {
   if (!o) return <div>Loading…</div>;
   const currentIdx = FLOW.indexOf(o.status);
   const nextStatus = currentIdx >= 0 && currentIdx < FLOW.length - 1 ? FLOW[currentIdx + 1] : null;
+  const awaitingPayment = o.status === "payment_under_validation" || (o.status === "placed" && o.transaction_id);
 
   return (
     <div>
@@ -88,6 +106,16 @@ const OrderDetail = () => {
                 <div className="mt-3 pt-3 border-t border-neutral-800">
                   <div className="text-[10px] uppercase tracking-widest text-neutral-500">Txn ID</div>
                   <div className="font-mono text-xs">{o.transaction_id}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-neutral-500 mt-2">Payment status</div>
+                  <div className="text-xs">{o.payment_status || "pending"}</div>
+                </div>
+              )}
+              {o.payment_screenshot_url && (
+                <div className="mt-3 pt-3 border-t border-neutral-800">
+                  <div className="text-[10px] uppercase tracking-widest text-neutral-500 mb-2">Payment screenshot</div>
+                  <a href={resolveMedia(o.payment_screenshot_url)} target="_blank" rel="noreferrer">
+                    <img src={resolveMedia(o.payment_screenshot_url)} alt="Payment proof" className="w-full max-h-48 object-contain bg-neutral-800" />
+                  </a>
                 </div>
               )}
               {o.order_note && (
@@ -101,10 +129,25 @@ const OrderDetail = () => {
 
           <div className="bg-neutral-900 border border-neutral-800 p-5 space-y-3">
             <h2 className="font-display uppercase text-lg">Actions</h2>
+            {awaitingPayment && (
+              <>
+                <button data-testid="admin-approve-payment" onClick={approvePayment} className="pl-btn pl-btn-primary w-full">
+                  Approve Payment
+                </button>
+                <button data-testid="admin-reject-payment" onClick={rejectPayment} className="pl-btn pl-btn-ghost-dark w-full">
+                  Reject Payment
+                </button>
+              </>
+            )}
             {o.status !== "cancelled" && o.status !== "delivered" && (
               <>
-                {nextStatus && (
+                {nextStatus && !awaitingPayment && (
                   <button data-testid="admin-advance-status" onClick={() => advance(nextStatus)} className="pl-btn pl-btn-primary w-full">
+                    Mark as {statusLabel(nextStatus)} →
+                  </button>
+                )}
+                {nextStatus && awaitingPayment && nextStatus !== "approved" && (
+                  <button data-testid="admin-advance-status" onClick={() => advance(nextStatus)} className="pl-btn pl-btn-ghost-dark w-full">
                     Mark as {statusLabel(nextStatus)} →
                   </button>
                 )}

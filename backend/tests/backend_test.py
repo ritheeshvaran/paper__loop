@@ -74,28 +74,47 @@ class TestHealth:
             assert prod["images"][0].startswith("/uploads/"), prod["images"][0]
 
 
+def _otp_code_from_send_response(data: dict) -> str:
+    """Extract OTP code from send-otp response (dev_code in development)."""
+    code = data.get("dev_code")
+    assert code, f"dev_code missing from send-otp response: {data}"
+    return code
+
+
+def _register_via_otp(session, email, password="pass1234", name="Test User"):
+    r = session.post(f"{API}/auth/send-otp", json={"email": email, "purpose": "registration"})
+    assert r.status_code == 200, r.text
+    code = _otp_code_from_send_response(r.json())
+    r2 = session.post(f"{API}/auth/verify-otp", json={"email": email, "code": code, "purpose": "registration"})
+    assert r2.status_code == 200, r2.text
+    otp_token = r2.json()["otp_token"]
+    payload = {
+        "email": email, "password": password, "name": name,
+        "phone": "9999999999", "address_line1": "1 Test St",
+        "city": "Chennai", "state": "TN", "pincode": "600001",
+        "otp_token": otp_token,
+    }
+    return session.post(f"{API}/auth/register", json=payload)
+
+
 # ─── Auth ─────────────────────────────────────────────────────────────────
 class TestAuth:
     def test_register_new(self, session):
         email = f"test_{uuid.uuid4().hex[:8]}@example.com"
-        payload = {
-            "email": email, "password": "pass1234", "name": "Test User",
-            "phone": "9999999999", "address_line1": "1 Test St",
-            "city": "Chennai", "state": "TN", "pincode": "600001",
-        }
-        r = session.post(f"{API}/auth/register", json=payload)
+        r = _register_via_otp(session, email)
         assert r.status_code == 200, r.text
         d = r.json()
         assert "token" in d and d["user"]["email"] == email
         assert d["user"]["role"] == "customer"
+        assert d["user"]["email_verified"] is True
 
     def test_login_wrong_password(self, session):
         r = session.post(f"{API}/auth/login", json={"email": DEMO_EMAIL, "password": "wrongpass"})
         assert r.status_code == 401
 
     def test_login_unknown_email(self, session):
-        r = session.post(f"{API}/auth/login", json={"email": f"nobody_{uuid.uuid4().hex[:6]}@x.com", "password": "abc123"})
-        assert r.status_code == 404
+        r = session.post(f"{API}/auth/login", json={"email": f"nobody_{uuid.uuid4().hex[:6]}@x.com", "password": "abc12345"})
+        assert r.status_code == 401
 
     def test_login_demo(self, session):
         r = session.post(f"{API}/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
@@ -239,12 +258,8 @@ class TestWishlist:
 @pytest.fixture(scope="module")
 def new_customer(session):
     email = f"buyer_{uuid.uuid4().hex[:8]}@example.com"
-    r = session.post(f"{API}/auth/register", json={
-        "email": email, "password": "pass1234", "name": "Buyer One",
-        "phone": "9999999999", "address_line1": "1 Buyer St",
-        "city": "Chennai", "state": "TN", "pincode": "600001",
-    })
-    assert r.status_code == 200
+    r = _register_via_otp(session, email, name="Buyer One")
+    assert r.status_code == 200, r.text
     return r.json()["token"], r.json()["user"]
 
 
@@ -314,10 +329,7 @@ class TestOrderLifecycle:
     def test_cancel_flow(self, session, admin_token):
         # Fresh order to test cancel
         email = f"cancel_{uuid.uuid4().hex[:8]}@example.com"
-        reg = session.post(f"{API}/auth/register", json={
-            "email": email, "password": "pass1234", "name": "C", "phone": "1", "address_line1": "x",
-            "city": "c", "state": "s", "pincode": "1",
-        }).json()
+        reg = _register_via_otp(session, email, name="C").json()
         token = reg["token"]
         p = session.get(f"{API}/products").json()[0]
         session.post(f"{API}/cart", headers=auth(token), json={"product_id": p["id"], "quantity": 1})

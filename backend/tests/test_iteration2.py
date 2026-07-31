@@ -40,15 +40,19 @@ class TestOtpRegistration:
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["sent"] is True
-        assert "dev_code" in d, f"dev_code missing (APP_ENV should be development): {d}"
+        assert d.get("delivery") in ("sent", "unconfigured", "error")
+        assert "dev_code" in d, f"dev_code missing in development: {d}"
         assert len(d["dev_code"]) == 6
         # save for later
         pytest.otp_email = email
         pytest.otp_code = d["dev_code"]
 
-    def test_send_otp_existing_email_400(self, s):
+    def test_send_otp_existing_email_anti_enumeration(self, s):
+        # Existing emails must not reveal account status
         r = s.post(f"{API}/auth/send-otp", json={"email": DEMO_EMAIL, "purpose": "registration"})
-        assert r.status_code == 400
+        assert r.status_code == 200
+        assert r.json().get("sent") is True
+        assert "dev_code" not in r.json()
 
     def test_verify_wrong_code_400(self, s):
         email = f"otpwrong_{uuid.uuid4().hex[:8]}@test.com"
@@ -86,9 +90,17 @@ class TestPasswordReset:
         email = f"reset_{uuid.uuid4().hex[:8]}@test.com"
         orig_pw = "OrigPass1"
         new_pw = "NewPass123"
+        # Register via OTP first
+        r0 = s.post(f"{API}/auth/send-otp", json={"email": email, "purpose": "registration"})
+        assert r0.status_code == 200 and r0.json().get("dev_code")
+        code0 = r0.json()["dev_code"]
+        v0 = s.post(f"{API}/auth/verify-otp", json={
+            "email": email, "code": code0, "purpose": "registration",
+        })
         s.post(f"{API}/auth/register", json={
             "email": email, "password": orig_pw, "name": "Reset User",
             "phone": "1", "address_line1": "x", "city": "c", "state": "s", "pincode": "1",
+            "otp_token": v0.json()["otp_token"],
         })
         # 1. send-otp for password_reset
         r = s.post(f"{API}/auth/send-otp", json={"email": email, "purpose": "password_reset"})
@@ -111,10 +123,13 @@ class TestPasswordReset:
         assert r5.status_code == 200
 
     def test_send_otp_reset_unknown_email(self, s):
+        # Anti-enumeration: unknown emails get a generic success (no code sent)
         r = s.post(f"{API}/auth/send-otp", json={
             "email": f"nobody_{uuid.uuid4().hex[:6]}@x.com", "purpose": "password_reset"
         })
-        assert r.status_code == 404
+        assert r.status_code == 200
+        assert r.json().get("sent") is True
+        assert "dev_code" not in r.json()
 
 
 # ─── Newsletter ───────────────────────────────────────────────────────────

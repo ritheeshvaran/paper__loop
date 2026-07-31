@@ -1,11 +1,13 @@
 """One-shot: sync hero + branding to MongoDB settings."""
 import asyncio
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from seed_data import copy_asset, default_settings
 
-load_dotenv()
+load_dotenv(Path(__file__).parent / ".env")
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 

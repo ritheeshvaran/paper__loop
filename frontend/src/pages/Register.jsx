@@ -7,6 +7,13 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { brandAsset } from "@/lib/assets";
 
+const formatApiError = (err) => {
+  const d = err.response?.data?.detail;
+  if (typeof d === "string") return d;
+  if (d?.message) return d.message;
+  return "Something went wrong. Try again.";
+};
+
 const Register = () => {
   const nav = useNavigate();
   const [params] = useSearchParams();
@@ -24,11 +31,13 @@ const Register = () => {
     setError(""); setBusy(true);
     try {
       const { data } = await api.post("/auth/send-otp", { email, purpose: "registration" });
-      toast.success("Code sent. Check your inbox.");
+      toast.success("If that email can receive a code, one has been sent.");
       if (data.dev_code) toast.message("Dev code (email not configured)", { description: `OTP: ${data.dev_code}`, duration: 12000 });
       setStep(2);
+      return data.retry_after ?? 60;
     } catch (err) {
-      setError(err.response?.data?.detail || "Couldn't send code.");
+      setError(formatApiError(err));
+      throw err;
     } finally { setBusy(false); }
   };
 
@@ -91,7 +100,7 @@ const Register = () => {
                 toast.success("Welcome to Paper & Loop.");
                 nav(next);
               } catch (err) {
-                toast.error(err.response?.data?.detail || "Sign-up failed.");
+                toast.error(formatApiError(err) || "Sign-up failed.");
               }
             }} />
           )}
@@ -105,7 +114,7 @@ export const OtpStep = ({ email, purpose, onVerified, onBack, onResend }) => {
   const [digits, setDigits] = useState(["", "", "", "", "", ""]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [resend, setResend] = useState(30);
+  const [resend, setResend] = useState(60);
   const refs = useRef([]);
 
   useEffect(() => {
@@ -139,7 +148,7 @@ export const OtpStep = ({ email, purpose, onVerified, onBack, onResend }) => {
       toast.success("Email verified.");
       onVerified(data.otp_token);
     } catch (err) {
-      setError(err.response?.data?.detail || "Invalid code");
+      setError(formatApiError(err));
       setDigits(["", "", "", "", "", ""]); refs.current[0]?.focus();
     } finally { setBusy(false); }
   };
@@ -147,11 +156,17 @@ export const OtpStep = ({ email, purpose, onVerified, onBack, onResend }) => {
   const doResend = async () => {
     if (resend > 0) return;
     try {
-      const { data } = await api.post("/auth/send-otp", { email, purpose });
-      toast.success("New code sent.");
-      if (data.dev_code) toast.message("Dev code", { description: `OTP: ${data.dev_code}`, duration: 12000 });
-      setResend(30);
-    } catch (e) { toast.error("Couldn't resend"); }
+      const data = onResend ? await onResend() : null;
+      const retry = typeof data === "number" ? data : 60;
+      toast.success("If that email can receive a code, one has been sent.");
+      setResend(retry);
+      setDigits(["", "", "", "", "", ""]);
+      refs.current[0]?.focus();
+    } catch (e) {
+      toast.error(formatApiError(e));
+      const retry = e.response?.data?.detail?.retry_after;
+      if (retry) setResend(retry);
+    }
   };
 
   return (
@@ -194,7 +209,7 @@ const DetailsStep = ({ email, onDone }) => {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
-    if (f.password.length < 6) return setError("Password must be at least 6 characters.");
+    if (f.password.length < 8) return setError("Password must be at least 8 characters.");
     if (f.password !== f.confirm) return setError("Passwords don't match.");
     setBusy(true);
     const { confirm, ...payload } = f;
