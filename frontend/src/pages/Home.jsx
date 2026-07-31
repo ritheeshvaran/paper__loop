@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { resolveMedia } from "@/lib/media";
 import { brandAsset } from "@/lib/assets";
 import { asArray } from "@/lib/lists";
+import { fetchProducts } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { toast } from "sonner";
@@ -212,9 +213,14 @@ const Home = ({ settings }) => {
   const navOffset = settings?.announcement ? 104 : 68;
 
   useEffect(() => {
-    api.get("/products?limit=20&sort=newest").then((r) => setFeatured(asArray(r.data))).catch(() => setFeatured([]));
+    fetchProducts({ limit: 20, sort: "newest" }).then(setFeatured).catch(() => setFeatured([]));
     api.get("/testimonials").then((r) => setTestimonials(asArray(r.data))).catch(() => setTestimonials([]));
-    api.get("/gallery").then((r) => setGallery(asArray(r.data))).catch(() => setGallery([]));
+    fetch("/gallery.json")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((data) => setGallery(asArray(data)))
+      .catch(() =>
+        api.get("/gallery").then((r) => setGallery(asArray(r.data))).catch(() => setGallery([])),
+      );
   }, []);
 
   const heroBg = resolveMedia(settings?.hero_background_url || brandAsset("hero"));

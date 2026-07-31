@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Heart, ShoppingBag, Minus, Plus, Truck, ShieldCheck, Package, ArrowLeft, Bell } from "lucide-react";
 import { api } from "@/lib/api";
-import { asArray } from "@/lib/lists";
+import { fetchProductBySlug, fetchProducts } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatINR } from "@/lib/format";
@@ -27,11 +27,12 @@ const ProductDetail = () => {
 
   useEffect(() => {
     setQty(1); setActiveImg(0); setRestockEmail(user?.email || "");
-    api.get(`/products/${slug}`).then((r) => {
-      setProduct(r.data);
-      api.get(`/products?category=${r.data.category_slug}&limit=8`).then((rr) => {
-        setRelated(asArray(rr.data).filter((p) => p.id !== r.data.id).slice(0, 4));
-      }).catch(() => setRelated([]));
+    fetchProductBySlug(slug).then((p) => {
+      if (!p) { setProduct(null); return; }
+      setProduct(p);
+      fetchProducts({ category: p.category_slug, limit: 8 })
+        .then((list) => setRelated(list.filter((x) => x.id !== p.id).slice(0, 4)))
+        .catch(() => setRelated([]));
     }).catch(() => setProduct(null));
     window.scrollTo({ top: 0, behavior: "smooth" });
     // eslint-disable-next-line react-hooks/exhaustive-deps

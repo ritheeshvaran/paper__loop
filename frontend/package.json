@@ -62,8 +62,8 @@
     "zod": "3.24.4"
   },
   "scripts": {
-    "sync:assets": "node scripts/sync-public-uploads.js",
-    "prebuild": "node scripts/sync-public-uploads.js",
+    "sync:assets": "node scripts/sync-public-uploads.js && node scripts/generate-products-json.js && node scripts/generate-gallery-json.js",
+    "prebuild": "node scripts/sync-public-uploads.js && node scripts/generate-products-json.js && node scripts/generate-gallery-json.js",
     "start": "craco start",
     "build": "craco build",
     "test": "craco test"

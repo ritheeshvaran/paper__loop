@@ -249,7 +249,7 @@ class TestUpload:
         r = requests.post(f"{API}/admin/upload", files=files, headers=headers)
         assert r.status_code == 200, r.text
         url = r.json()["url"]
-        assert url.startswith("/api/uploads/")
+        assert url.startswith("/uploads/")
         # accessible via GET
         full = BASE_URL + url
         g = requests.get(full)

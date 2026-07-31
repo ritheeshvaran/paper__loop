@@ -562,8 +562,7 @@ async def upload_file(file: UploadFile = File(...), _: dict = Depends(require_ad
         raise HTTPException(400, "File too large (max 8MB)")
     with dest.open("wb") as f:
         f.write(content)
-    # Public URL served through backend (/api/uploads/…)
-    return {"url": f"/api/uploads/{fname}"}
+    return {"url": f"/uploads/{fname}"}
 
 
 # ─── Cart ───────────────────────────────────────────────────────────────────
@@ -1150,6 +1149,15 @@ async def seed_if_empty():
                 await db.settings.update_one({"key": "site"}, {"$set": default_settings()}, upsert=True)
 
     await _ensure_brand_assets()
+    await _migrate_upload_urls()
+
+
+async def _migrate_upload_urls():
+    """Rewrite legacy /api/uploads/ paths to /uploads/ in MongoDB."""
+    from migrate_upload_urls import migrate
+    stats = await migrate(db)
+    if any(stats.values()):
+        log.info("Migrated upload URLs: %s", stats)
 
 
 async def _ensure_brand_assets():
@@ -1193,10 +1201,10 @@ async def root():
     return {"name": "Paper & Loop API", "status": "alive", "env": APP_ENV}
 
 
-# Static uploads served via /api/uploads
-api.mount = None  # placeholder
 app.include_router(api)
-app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+# Static uploads — /uploads/ is the canonical public path (Vercel + backend)
+app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_legacy")
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

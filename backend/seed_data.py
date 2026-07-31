@@ -184,7 +184,7 @@ TESTIMONIALS = [
 
 
 def upload_url(filename: str) -> str:
-    return f"/api/uploads/{filename}"
+    return f"/uploads/{filename}"
 
 
 def copy_asset(source_rel: str, dest_name: str) -> None:

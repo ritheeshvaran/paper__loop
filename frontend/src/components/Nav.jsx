@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Search, ShoppingBag, User, Menu, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
+import { fetchProducts } from "@/lib/products";
 import { api } from "@/lib/api";
 import { resolveMedia } from "@/lib/media";
 import { asArray } from "@/lib/lists";
@@ -187,7 +188,7 @@ const SearchOverlay = ({ open, onClose }) => {
     if (!q) { setResults([]); return; }
     const t = setTimeout(async () => {
       try {
-        const { data } = await api.get(`/products?q=${encodeURIComponent(q)}&limit=8`);
+        const data = await fetchProducts({ q, limit: 8 });
         setResults(asArray(data));
       } catch (e) { setResults([]); }
     }, 250);

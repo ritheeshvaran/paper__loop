@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/lists";
+import { fetchProducts } from "@/lib/products";
 import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { motion } from "framer-motion";
@@ -24,7 +25,9 @@ const Collections = () => {
     if (slug && slug !== "all") params.set("category", slug);
     params.set("sort", sort);
     params.set("limit", "60");
-    api.get(`/products?${params.toString()}`).then((r) => { setProducts(asArray(r.data)); setLoading(false); }).catch(() => { setProducts([]); setLoading(false); });
+    fetchProducts({ category: slug && slug !== "all" ? slug : undefined, sort, limit: 60 })
+      .then((list) => { setProducts(list); setLoading(false); })
+      .catch(() => { setProducts([]); setLoading(false); });
   }, [slug, sort]);
 
   const active = cats.find((c) => c.slug === slug);
