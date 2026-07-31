@@ -7,10 +7,9 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
+from mongo_client import create_motor_client
 
 load_dotenv(Path(__file__).parent / ".env")
-MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
 
 OLD = "/api/uploads/"
@@ -71,7 +70,7 @@ async def migrate(db) -> dict:
 
 
 async def main():
-    client = AsyncIOMotorClient(MONGO_URL)
+    client = create_motor_client()
     db = client[DB_NAME]
     stats = await migrate(db)
     sample = await db.products.find_one({}, {"_id": 0, "name": 1, "images": 1})

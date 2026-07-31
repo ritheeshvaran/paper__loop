@@ -20,7 +20,7 @@ import jwt
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
-from motor.motor_asyncio import AsyncIOMotorClient
+from mongo_client import create_motor_client, normalize_mongo_url
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from starlette.middleware.cors import CORSMiddleware
 from seed_data import (
@@ -57,7 +57,7 @@ from security_utils import (
 UPLOAD_DIR = ROOT_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-MONGO_URL = os.environ["MONGO_URL"]
+MONGO_URL = normalize_mongo_url(os.environ["MONGO_URL"])
 DB_NAME = os.environ["DB_NAME"]
 APP_ENV = os.environ.get("APP_ENV", "development")
 JWT_SECRET = os.environ.get("JWT_SECRET", "").strip()
@@ -91,8 +91,8 @@ def _mongo_cluster_label(url: str) -> str:
         return "unknown"
 
 
-async def _verify_mongodb_connection() -> None:
-    """Ping MongoDB and log connection outcome (Atlas-safe, no secrets in logs)."""
+async def _verify_mongodb_connection() -> bool:
+    """Ping MongoDB and log connection outcome. Returns True if reachable."""
     cluster = _mongo_cluster_label(MONGO_URL)
     is_atlas = MONGO_URL.startswith("mongodb+srv://")
     try:
@@ -109,6 +109,7 @@ async def _verify_mongodb_connection() -> None:
                 DB_NAME,
                 cluster,
             )
+        return True
     except Exception as exc:
         log.error(
             "MongoDB connection failed. database=%s cluster=%s error=%s",
@@ -116,11 +117,16 @@ async def _verify_mongodb_connection() -> None:
             cluster,
             exc,
         )
-        raise RuntimeError(f"MongoDB connection failed ({cluster})") from exc
+        log.error(
+            "Atlas TLS tip: whitelist Render outbound IPs in Atlas Network Access; "
+            "ensure MONGO_URL uses mongodb+srv:// and certifi is installed."
+        )
+        return False
 
 
-client = AsyncIOMotorClient(MONGO_URL)
+client = create_motor_client(MONGO_URL)
 db = client[DB_NAME]
+_mongo_ready = False
 
 app = FastAPI(title="Paper & Loop API")
 api = APIRouter(prefix="/api")
@@ -1566,7 +1572,11 @@ async def _ensure_brand_assets():
 
 @app.on_event("startup")
 async def on_startup():
-    await _verify_mongodb_connection()
+    global _mongo_ready
+    _mongo_ready = await _verify_mongodb_connection()
+    if not _mongo_ready:
+        log.error("MongoDB unavailable at startup — serving health checks; DB routes will fail until connected.")
+        return
     await ensure_indexes(db)
     await seed_if_empty()
     await _release_expired_reservations()
@@ -1592,14 +1602,32 @@ app.include_router(api)
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_legacy")
 
-_cors_raw = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
-_cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
-if APP_ENV == "production" and ("*" in _cors_origins or not _cors_origins):
+# Explicit allow-list — never use "*" with allow_credentials=True
+_DEFAULT_CORS_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://paper-loop-a22l94ils-ritheeshvaran2007-2720s-projects.vercel.app",
+    "https://paperloop.shop",
+    "https://www.paperloop.shop",
+]
+
+
+def _build_cors_origins() -> list[str]:
+    extra = [
+        o.strip()
+        for o in os.environ.get("CORS_ORIGINS", "").split(",")
+        if o.strip() and o.strip() != "*"
+    ]
+    return list(dict.fromkeys(_DEFAULT_CORS_ORIGINS + extra))
+
+
+_cors_origins = _build_cors_origins()
+if APP_ENV == "production" and not _cors_origins:
     log.error("CORS_ORIGINS must be an explicit allow-list in production")
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=_cors_origins if _cors_origins else ["http://localhost:3000"],
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "Accept"],
+    allow_origins=_cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )

@@ -7,9 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
-
-from seed_data import (
+from mongo_client import create_motor_client
     CATEGORIES,
     GALLERY_FILENAMES,
     PRODUCTS,
@@ -37,7 +35,7 @@ def now_iso() -> str:
 
 async def main():
     copy_all_assets()
-    client = AsyncIOMotorClient(MONGO_URL)
+    client = create_motor_client()
     db = client[DB_NAME]
 
     for i, (name, slug, banner_file) in enumerate(CATEGORIES):
