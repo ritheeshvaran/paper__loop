@@ -62,6 +62,8 @@
     "zod": "3.24.4"
   },
   "scripts": {
+    "sync:assets": "node scripts/sync-public-uploads.js",
+    "prebuild": "node scripts/sync-public-uploads.js",
     "start": "craco start",
     "build": "craco build",
     "test": "craco test"

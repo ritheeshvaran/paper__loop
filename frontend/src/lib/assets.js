@@ -1,21 +1,19 @@
-import { resolveMedia } from "@/lib/media";
-
-/** Paper & Loop brand asset paths — served from backend /api/uploads */
+/** Paper & Loop brand assets — bundled in public/uploads/ for Vercel static hosting. */
 export const BRAND_ASSETS = {
-  hero: "/api/uploads/hero-background.png",
-  authLogin: "/api/uploads/auth-login.jpg",
-  authRegister: "/api/uploads/auth-register.jpg",
-  authForgot: "/api/uploads/auth-forgot.jpg",
-  authAbout: "/api/uploads/auth-about.jpg",
-  roomBedroom: "/api/uploads/room-bedroom.jpg",
-  roomGaming: "/api/uploads/room-gaming.jpg",
-  roomLiving: "/api/uploads/room-living.jpg",
-  comingSoonTees: "/api/uploads/coming-soon-tees.jpg",
-  comingSoonHoodies: "/api/uploads/coming-soon-hoodies.jpg",
-  comingSoonAccessories: "/api/uploads/coming-soon-accessories.jpeg",
+  hero: "/uploads/hero-background.png",
+  authLogin: "/uploads/auth-login.jpg",
+  authRegister: "/uploads/auth-register.jpg",
+  authForgot: "/uploads/auth-forgot.jpg",
+  authAbout: "/uploads/auth-about.jpg",
+  roomBedroom: "/uploads/room-bedroom.jpg",
+  roomGaming: "/uploads/room-gaming.jpg",
+  roomLiving: "/uploads/room-living.jpg",
+  comingSoonTees: "/uploads/coming-soon-tees.jpg",
+  comingSoonHoodies: "/uploads/coming-soon-hoodies.jpg",
+  comingSoonAccessories: "/uploads/coming-soon-accessories.jpeg",
 };
 
-export const brandAsset = (key) => resolveMedia(BRAND_ASSETS[key]);
+export const brandAsset = (key) => BRAND_ASSETS[key] || "";
 
 export const ROOM_TEMPLATES = [
   { name: "Bedroom", asset: "roomBedroom", zone: { top: "22%", left: "38%", width: "24%", height: "34%" } },

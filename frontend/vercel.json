@@ -5,9 +5,15 @@
   "outputDirectory": "build",
   "framework": "create-react-app",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!uploads/|static/|favicon\\.ico|manifest\\.json|robots\\.txt|.*\\..*).*)", "destination": "/index.html" }
   ],
   "headers": [
+    {
+      "source": "/uploads/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
     {
       "source": "/(.*)",
       "headers": [
