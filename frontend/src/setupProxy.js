@@ -16,4 +16,12 @@ module.exports = function setupProxy(app) {
       changeOrigin: true,
     }),
   );
+  // Dev fallback for payment/upload paths not mirrored into public/
+  app.use(
+    "/uploads",
+    createProxyMiddleware({
+      target,
+      changeOrigin: true,
+    }),
+  );
 };

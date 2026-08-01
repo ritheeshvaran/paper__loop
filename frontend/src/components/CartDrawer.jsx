@@ -5,6 +5,7 @@ import { X, Trash2, Plus, Minus } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatINR } from "@/lib/format";
+import { resolveMedia } from "@/lib/media";
 
 export const CartDrawer = () => {
   const { cart, drawerOpen, setDrawerOpen, updateQty, removeItem, flyFrom, setFlyFrom } = useCart();
@@ -72,14 +73,14 @@ export const CartDrawer = () => {
                     <div className="text-6xl font-display text-neutral-200">P&amp;L</div>
                     <div className="font-display uppercase tracking-widest text-sm">Your bag is empty</div>
                     <p className="text-neutral-500 text-sm max-w-xs">Browse the drops — anime panels, JDM icons, and pocket-flex keychains are waiting.</p>
-                    <Link to="/collections" onClick={() => setDrawerOpen(false)} className="pl-btn pl-btn-dark mt-2">Continue Shopping</Link>
+                    <Link to="/shop" onClick={() => setDrawerOpen(false)} className="pl-btn pl-btn-dark mt-2">Continue Shopping</Link>
                   </div>
                 ) : (
                   <ul className="space-y-4">
                     {cart.items.map((it) => (
                       <li key={it.product_id} className="flex gap-4">
                         <Link to={`/product/${it.product.slug}`} onClick={() => setDrawerOpen(false)} className="w-20 h-24 bg-neutral-100 shrink-0">
-                          <img src={it.product.images?.[0]} alt={it.product.name} className="w-full h-full object-cover" />
+                          <img src={resolveMedia(it.product?.images?.[0])} alt={it.product?.name} className="w-full h-full object-cover" />
                         </Link>
                         <div className="flex-1 min-w-0">
                           <div className="text-[10px] uppercase tracking-widest text-neutral-500">{it.product.category_slug}</div>

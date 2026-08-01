@@ -1,6 +1,7 @@
 /** Paper & Loop brand assets — bundled in public/uploads/ for Vercel static hosting. */
 export const BRAND_ASSETS = {
   hero: "/uploads/hero-background.png",
+  logo: "/uploads/logo-paper-loop.png",
   authLogin: "/uploads/auth-login.jpg",
   authRegister: "/uploads/auth-register.jpg",
   authForgot: "/uploads/auth-forgot.jpg",

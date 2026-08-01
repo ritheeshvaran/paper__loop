@@ -7,6 +7,7 @@ import { useCart } from "@/context/CartContext";
 import { fetchProducts } from "@/lib/products";
 import { api } from "@/lib/api";
 import { resolveMedia } from "@/lib/media";
+import { brandAsset } from "@/lib/assets";
 import { asArray } from "@/lib/lists";
 
 const links = [
@@ -49,12 +50,16 @@ export const Nav = ({ settings }) => {
   useEffect(() => { setMobileOpen(false); setSearchOpen(false); }, [loc.pathname]);
 
   const navClass = overHero
-    ? "pl-nav-glass-light"
+    ? "pl-nav-transparent"
     : scrolled || !isHome
       ? "pl-nav-glass"
       : "pl-nav-transparent";
 
-  const useTextLogo = !settings?.logo_url || /emergent|unsplash|pexels/i.test(settings.logo_url);
+  const logoSrc = (() => {
+    const fromSettings = settings?.logo_url;
+    if (fromSettings && !/emergent|unsplash|pexels/i.test(fromSettings)) return resolveMedia(fromSettings);
+    return brandAsset("logo");
+  })();
 
   return (
     <>
@@ -65,7 +70,7 @@ export const Nav = ({ settings }) => {
         {hasAnnouncement && (
           <div
             data-testid="announcement-bar"
-            className="bg-[color:var(--pl-black)] text-white text-center text-[11px] tracking-widest uppercase py-2 font-medium"
+            className="bg-[color:var(--pl-black)] text-white text-center text-[11px] tracking-widest uppercase py-2.5 font-medium"
           >
             {settings.announcement}
           </div>
@@ -76,26 +81,30 @@ export const Nav = ({ settings }) => {
           className={`${navClass} text-white transition-[background,border-color,backdrop-filter] duration-500 ease-out`}
           style={{ height: NAV_H }}
         >
-          <div className="pl-container flex items-center justify-between h-full">
+          <div className="pl-container flex items-center justify-between h-full gap-6">
             <Link to="/" data-testid="nav-logo" className="flex items-center shrink-0 group" data-cursor="Home">
-              {useTextLogo ? (
+              {logoSrc ? (
+                <img
+                  src={logoSrc}
+                  alt="Paper & Loop"
+                  className="h-11 md:h-12 w-auto max-w-[168px] object-contain transition-opacity duration-300 group-hover:opacity-90"
+                />
+              ) : (
                 <span className="font-display text-[15px] tracking-[-0.02em] uppercase text-white group-hover:text-white/90 transition-colors">
                   Paper <span className="text-[color:var(--pl-orange)]">&</span> Loop
                 </span>
-              ) : (
-                <img src={resolveMedia(settings.logo_url)} alt="Paper & Loop" className="h-7 w-auto" />
               )}
             </Link>
 
-            <nav className="hidden lg:flex items-center gap-10 absolute left-1/2 -translate-x-1/2">
+            <nav className="hidden lg:flex items-center gap-11 absolute left-1/2 -translate-x-1/2">
               {links.map((l) => (
                 <NavLink
                   key={l.to}
                   to={l.to}
                   end={l.end}
-                  data-testid={`nav-link-${l.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  data-testid={`nav-link-${(l.label || "").toLowerCase().replace(/\s+/g, "-")}`}
                   className={({ isActive }) =>
-                    `relative text-[11px] tracking-[0.26em] uppercase font-medium transition-colors duration-300 ${isActive ? "text-white" : "text-white/75 hover:text-white"}`
+                    `relative text-[11px] tracking-[0.28em] uppercase font-medium transition-colors duration-300 ${isActive ? "text-white" : "text-white/70 hover:text-white"}`
                   }
                 >
                   {({ isActive }) => (
@@ -105,7 +114,7 @@ export const Nav = ({ settings }) => {
                         layoutId="nav-underline"
                         className="absolute -bottom-0.5 h-px bg-[color:var(--pl-orange)]"
                         initial={false}
-                        animate={{ width: isActive ? 20 : 0, opacity: isActive ? 1 : 0 }}
+                        animate={{ width: isActive ? 22 : 0, opacity: isActive ? 1 : 0 }}
                         transition={{ type: "spring", damping: 24, stiffness: 340 }}
                       />
                     </span>

@@ -60,7 +60,7 @@ const Login = () => {
               <input data-testid="login-password" type="password" required value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full mt-1 border-b border-neutral-300 focus:border-black bg-transparent py-2 focus:outline-none" />
             </div>
             {error && <div data-testid="login-error" className="text-sm text-red-600">{error}</div>}
-            <button data-testid="login-submit" disabled={busy} className="pl-btn pl-btn-primary w-full">{busy ? "Signing in…" : "Sign in"}</button>
+            <button type="submit" data-testid="login-submit" disabled={busy} className="pl-btn pl-btn-primary w-full">{busy ? "Signing in…" : "Sign in"}</button>
             <div className="text-right">
               <Link to="/forgot-password" data-testid="link-forgot" className="text-xs uppercase tracking-widest font-bold text-neutral-500 hover:text-[color:var(--pl-orange)]">Forgot password?</Link>
             </div>

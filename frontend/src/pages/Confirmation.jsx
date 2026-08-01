@@ -25,8 +25,10 @@ const Confirmation = () => {
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <div className="text-[11px] uppercase tracking-widest text-neutral-500 mt-6">Step 3 of 3 · Confirmation</div>
-          <h1 className="font-display uppercase text-editorial mt-2">Payment submitted.</h1>
-          <p className="text-neutral-600 mt-3 max-w-md mx-auto">We're verifying your payment now. You'll get a confirmation and delivery date shortly. Your items are reserved.</p>
+          <h1 className="font-display uppercase text-editorial mt-2">Payment Verification Pending.</h1>
+          <p className="text-neutral-600 mt-3 max-w-md mx-auto" data-testid="confirmation-status">
+            Your payment is awaiting admin verification. This is not approved yet. You'll see Payment Approved → Order Confirmed once verified.
+          </p>
 
           <div className="mt-8 border border-neutral-200 p-6 text-left">
             <div className="flex justify-between items-center mb-4">
@@ -46,8 +48,8 @@ const Confirmation = () => {
           </div>
 
           <div className="mt-8 flex flex-wrap gap-3 justify-center">
-            <Link to={`/account/orders/${order.id}`} className="pl-btn pl-btn-dark">Track Order</Link>
-            <Link to="/collections" className="pl-btn pl-btn-ghost-light">Continue Shopping</Link>
+            <Link to={`/account/orders/${order.id}`} className="pl-btn pl-btn-dark" data-testid="view-order-btn">View Order</Link>
+            <Link to="/shop" className="pl-btn pl-btn-ghost-light">Continue Shopping</Link>
           </div>
         </motion.div>
       </div>

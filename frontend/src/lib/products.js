@@ -1,4 +1,4 @@
-import { api, BACKEND_URL } from "@/lib/api";
+import { api } from "@/lib/api";
 import { asArray } from "@/lib/lists";
 
 let staticCatalog = null;
@@ -14,13 +14,13 @@ async function loadStaticCatalog() {
 function applyClientFilters(list, params = {}) {
   let out = [...list];
   if (params.category) out = out.filter((p) => p.category_slug === params.category);
-  if (params.q) {
-    const q = params.q.toLowerCase();
+  if (params.q != null && String(params.q).trim() !== "") {
+    const q = String(params.q).toLowerCase();
     out = out.filter(
       (p) =>
-        p.name?.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.category_slug?.toLowerCase().includes(q),
+        (p.name || "").toLowerCase().includes(q) ||
+        (p.description || "").toLowerCase().includes(q) ||
+        (p.category_slug || "").toLowerCase().includes(q),
     );
   }
   if (params.featured === true || params.featured === "true") out = out.filter((p) => p.is_featured);
@@ -38,16 +38,17 @@ function applyClientFilters(list, params = {}) {
   return out;
 }
 
-/** Fetch products — live API when configured, static catalog fallback for Vercel. */
+/**
+ * Fetch products — always try live API first (CRA proxy `/api` in dev, absolute URL in prod).
+ * Fall back to static catalog only when the API is unreachable (static-only Vercel deploys).
+ */
 export async function fetchProducts(params = {}) {
-  if (BACKEND_URL) {
-    try {
-      const { data } = await api.get("/products", { params });
-      const list = asArray(data);
-      if (list.length) return list;
-    } catch {
-      /* use static catalog */
-    }
+  try {
+    const { data } = await api.get("/products", { params });
+    const list = asArray(data);
+    if (list.length) return list;
+  } catch {
+    /* use static catalog */
   }
   const staticList = await loadStaticCatalog();
   return applyClientFilters(staticList, params);
@@ -55,13 +56,11 @@ export async function fetchProducts(params = {}) {
 
 /** Fetch one product by slug — API first, static fallback. */
 export async function fetchProductBySlug(slug) {
-  if (BACKEND_URL) {
-    try {
-      const { data } = await api.get(`/products/${slug}`);
-      if (data?.slug) return data;
-    } catch {
-      /* use static catalog */
-    }
+  try {
+    const { data } = await api.get(`/products/${slug}`);
+    if (data?.slug) return data;
+  } catch {
+    /* use static catalog */
   }
   const staticList = await loadStaticCatalog();
   return staticList.find((p) => p.slug === slug) || null;

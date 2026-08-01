@@ -43,7 +43,7 @@ const TAXONOMY = {
 /* Best-effort heuristic to bucket a product by name/description when
  * category_slug alone doesn't tell us its theme. */
 const themeFor = (p) => {
-  const s = (p.name + " " + (p.description || "")).toLowerCase();
+  const s = `${p?.name || ""} ${p?.description || ""}`.toLowerCase();
   if (s.includes("anime") || s.includes("sakura") || s.includes("chibi") || s.includes("kanji") || s.includes("tokyo") || s.includes("tanjiro") || s.includes("demon slayer") || s.includes("naruto")) return "anime";
   if (s.includes("gt-r") || s.includes("gtr") || s.includes("jdm") || s.includes("ferrari") || s.includes("formula") || s.includes("autobahn") || s.includes("grid position")) return "cars";
   if (s.includes("court") || s.includes("f1") || s.includes("basketball") || s.includes("sport") || s.includes("kohli") || s.includes("ronaldo") || s.includes("messi")) return "sports";

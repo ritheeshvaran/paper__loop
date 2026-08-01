@@ -48,8 +48,8 @@ const ProductDetail = () => {
   return (
     <div className="pl-section-light">
       <div className="pl-container pt-8">
-        <Link to={`/collections/${product.category_slug}`} className="inline-flex items-center gap-2 text-xs uppercase tracking-widest text-neutral-500 hover:text-black">
-          <ArrowLeft className="w-3 h-3" /> Back to {product.category_slug}
+        <Link to={`/shop?type=posters&theme=${product.category_slug === "keychains" ? "" : product.category_slug}`} className="inline-flex items-center gap-2 text-xs uppercase tracking-widest text-neutral-500 hover:text-black">
+          <ArrowLeft className="w-3 h-3" /> Back to shop
         </Link>
       </div>
 

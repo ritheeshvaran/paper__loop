@@ -2,11 +2,18 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
-import { formatDate, formatINR, statusLabel, statusColor } from "@/lib/format";
+import {
+  formatDate,
+  formatINR,
+  statusLabel,
+  statusColor,
+  paymentStatusLabel,
+  paymentStatusColor,
+  CUSTOMER_ORDER_FLOW,
+} from "@/lib/format";
+import { resolveMedia } from "@/lib/media";
 import { toast } from "sonner";
 import { CheckCircle2, Circle, XCircle } from "lucide-react";
-
-const FLOW = ["placed", "payment_under_validation", "approved", "preparing", "packed", "out_for_delivery", "delivered"];
 
 const OrderDetail = () => {
   const { id } = useParams();
@@ -24,23 +31,44 @@ const OrderDetail = () => {
 
   if (!o) return <div className="min-h-[60vh] flex items-center justify-center">Loading…</div>;
   const cancelled = o.status === "cancelled";
-  const currentIdx = FLOW.indexOf(o.status);
+  const rejected = o.payment_status === "rejected";
+  // Map approved+ to final step on simplified timeline
+  const timelineStatus = ["approved", "preparing", "packed", "out_for_delivery", "delivered"].includes(o.status)
+    ? "approved"
+    : o.status;
+  const currentIdx = CUSTOMER_ORDER_FLOW.indexOf(timelineStatus);
 
   return (
     <div className="pl-section-light py-16">
       <div className="pl-container">
         <Link to="/account/orders" className="text-xs uppercase tracking-widest text-neutral-500 hover:text-black">← All orders</Link>
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <h1 className="font-display uppercase text-3xl md:text-4xl">Order {o.order_number}</h1>
-          <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${statusColor(o.status)}`}>{statusLabel(o.status)}</span>
+          <h1 className="font-display uppercase text-3xl md:text-4xl" data-testid="order-number">Order {o.order_number}</h1>
+          <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${statusColor(o.status)}`} data-testid="order-status">
+            {statusLabel(o.status)}
+          </span>
+          <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${paymentStatusColor(o.payment_status)}`} data-testid="payment-status">
+            {paymentStatusLabel(o.payment_status)}
+          </span>
         </div>
         <div className="text-sm text-neutral-500 mt-1">Placed on {formatDate(o.created_at)}</div>
 
-        {/* Timeline */}
+        {rejected && (
+          <div className="mt-6 border border-red-200 bg-red-50 p-5" data-testid="payment-rejected-banner">
+            <div className="font-display uppercase text-red-700">Payment Rejected</div>
+            <p className="text-sm text-red-800 mt-1">
+              {o.timeline?.filter((t) => t.note)?.slice(-1)[0]?.note || "Please resubmit a valid UPI transaction ID."}
+            </p>
+            <Link to={`/checkout/payment/${o.id}`} data-testid="retry-payment-btn" className="pl-btn pl-btn-primary mt-4 inline-flex">
+              Retry Payment →
+            </Link>
+          </div>
+        )}
+
+        {/* Timeline — purchase states only */}
         <div className="mt-10 border border-neutral-200 p-6 md:p-8">
           <div className="flex items-center justify-between mb-2 text-[11px] uppercase tracking-widest text-neutral-500">
-            <span>Order Timeline</span>
-            {o.delivery_date && <span>Expected: {formatDate(o.delivery_date)}</span>}
+            <span>Order Status</span>
           </div>
           {cancelled ? (
             <div className="flex items-center gap-3 mt-6 text-red-600">
@@ -55,13 +83,13 @@ const OrderDetail = () => {
               <div className="absolute left-3 top-3 bottom-3 w-px bg-neutral-200" />
               <motion.div
                 initial={{ height: 0 }}
-                animate={{ height: `${Math.max(0, (currentIdx / (FLOW.length - 1)) * 100)}%` }}
+                animate={{ height: `${Math.max(0, (Math.max(currentIdx, 0) / (CUSTOMER_ORDER_FLOW.length - 1)) * 100)}%` }}
                 transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
                 className="absolute left-3 top-3 w-px bg-[color:var(--pl-orange)]"
               />
               <ol className="space-y-6 relative">
-                {FLOW.map((s, i) => {
-                  const done = i <= currentIdx;
+                {CUSTOMER_ORDER_FLOW.map((s, i) => {
+                  const done = currentIdx >= 0 && i <= currentIdx;
                   return (
                     <motion.li
                       key={s}
@@ -75,8 +103,8 @@ const OrderDetail = () => {
                       </div>
                       <div>
                         <div className={`font-display uppercase ${done ? "" : "text-neutral-400"}`}>{statusLabel(s)}</div>
-                        {done && o.timeline?.find((t) => t.status === s) && (
-                          <div className="text-xs text-neutral-500">{formatDate(o.timeline.find((t) => t.status === s).at)} {o.timeline.find((t) => t.status === s).note ? "· " + o.timeline.find((t) => t.status === s).note : ""}</div>
+                        {s === "approved" && o.payment_status === "verified" && done && (
+                          <div className="text-xs text-green-700 mt-0.5">✔ Payment Approved</div>
                         )}
                       </div>
                     </motion.li>
@@ -87,14 +115,13 @@ const OrderDetail = () => {
           )}
         </div>
 
-        {/* Items + summary */}
         <div className="mt-10 grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 border border-neutral-200 p-6">
             <h2 className="font-display uppercase text-xl mb-6">Items</h2>
             <ul className="divide-y divide-neutral-200">
               {o.items.map((it) => (
                 <li key={it.product_id} className="py-4 flex gap-4">
-                  <img src={it.product_image} alt={it.product_name} className="w-20 h-24 object-cover bg-neutral-100" />
+                  <img src={resolveMedia(it.product_image)} alt={it.product_name} className="w-20 h-24 object-cover bg-neutral-100" />
                   <div className="flex-1">
                     <div className="font-display uppercase">{it.product_name}</div>
                     <div className="text-xs text-neutral-500">Qty {it.quantity} × {formatINR(it.final_price)}</div>
@@ -117,27 +144,33 @@ const OrderDetail = () => {
             {o.discount_total > 0 && <div className="flex justify-between text-sm text-[color:var(--pl-orange)]"><span>Discount</span><span className="font-tabular">−{formatINR(o.discount_total)}</span></div>}
             <div className="flex justify-between text-sm"><span>Delivery</span><span className="text-green-700 uppercase tracking-widest text-[10px] font-bold">No delivery charges</span></div>
             <div className="flex justify-between items-baseline pt-4 border-t border-neutral-200">
-              <span className="font-display uppercase text-sm">Total</span>
-              <span className="font-display text-2xl font-bold font-tabular">{formatINR(o.total)}</span>
+              <span className="font-display uppercase text-sm">Grand Total</span>
+              <span className="font-display text-2xl font-bold font-tabular" data-testid="order-grand-total">{formatINR(o.total)}</span>
             </div>
             <div className="text-xs text-neutral-500">
               <div className="uppercase tracking-widest mt-4 mb-1">Ship to</div>
               <div>{o.customer_name}</div>
-              <div>{o.address_line1}, {o.address_line2}</div>
+              <div>{o.address_line1}{o.address_line2 ? `, ${o.address_line2}` : ""}</div>
               <div>{o.city}, {o.state} {o.pincode}</div>
               <div>{o.phone}</div>
             </div>
             {o.transaction_id && (
-              <div className="text-xs">
+              <div className="text-xs" data-testid="order-txn-id">
                 <div className="uppercase tracking-widest text-neutral-500">Transaction ID</div>
                 <div className="font-mono">{o.transaction_id}</div>
               </div>
             )}
-            {["placed", "payment_under_validation", "approved"].includes(o.status) && (
+            {o.payment_screenshot_url && (
+              <div className="text-xs">
+                <div className="uppercase tracking-widest text-neutral-500 mb-1">Payment screenshot</div>
+                <img src={resolveMedia(o.payment_screenshot_url)} alt="Payment proof" className="w-full max-h-40 object-contain border border-neutral-200" />
+              </div>
+            )}
+            {["placed", "payment_under_validation"].includes(o.status) && (
               <button data-testid="cancel-order-btn" onClick={cancel} className="pl-btn pl-btn-ghost-light w-full text-red-600 border-red-600 hover:bg-red-600 hover:text-white">Cancel Order</button>
             )}
-            {o.status === "placed" && !o.transaction_id && (
-              <Link to={`/checkout/payment/${o.id}`} className="pl-btn pl-btn-primary w-full">Complete Payment</Link>
+            {(o.status === "placed" && o.payment_status !== "rejected") && (
+              <Link to={`/checkout/payment/${o.id}`} className="pl-btn pl-btn-primary w-full" data-testid="complete-payment-btn">Complete Payment</Link>
             )}
           </div>
         </div>

@@ -1,0 +1,48 @@
+{
+  "results": [
+    {
+      "name": "homepage",
+      "ok": true
+    },
+    {
+      "name": "mobile-home",
+      "ok": true
+    },
+    {
+      "name": "shop",
+      "ok": true
+    },
+    {
+      "name": "product",
+      "ok": true
+    },
+    {
+      "name": "cart-drawer",
+      "ok": true
+    },
+    {
+      "name": "login",
+      "ok": true
+    },
+    {
+      "name": "register",
+      "ok": true
+    },
+    {
+      "name": "checkout-guard",
+      "ok": true
+    },
+    {
+      "name": "admin-guard",
+      "ok": true
+    },
+    {
+      "name": "assets",
+      "ok": true
+    }
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "passed": true
+}

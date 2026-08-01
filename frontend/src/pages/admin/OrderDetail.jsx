@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
-import { formatINR, formatDate, statusLabel, statusColor } from "@/lib/format";
+import { formatINR, formatDate, statusLabel, statusColor, paymentStatusLabel, paymentStatusColor } from "@/lib/format";
 import { resolveMedia } from "@/lib/media";
 import { toast } from "sonner";
 
@@ -43,14 +43,16 @@ const OrderDetail = () => {
   if (!o) return <div>Loading…</div>;
   const currentIdx = FLOW.indexOf(o.status);
   const nextStatus = currentIdx >= 0 && currentIdx < FLOW.length - 1 ? FLOW[currentIdx + 1] : null;
-  const awaitingPayment = o.status === "payment_under_validation" || (o.status === "placed" && o.transaction_id);
+  const awaitingPayment = o.status === "payment_under_validation"
+    || (o.status === "placed" && o.payment_status === "under_validation");
 
   return (
     <div>
       <Link to="/admin/orders" className="text-xs uppercase tracking-widest text-neutral-500 hover:text-white">← All orders</Link>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="font-display uppercase text-3xl">{o.order_number}</h1>
-        <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${statusColor(o.status)}`}>{statusLabel(o.status)}</span>
+        <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${statusColor(o.status)}`} data-testid="admin-order-status">{statusLabel(o.status)}</span>
+        <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${paymentStatusColor(o.payment_status)}`} data-testid="admin-payment-status">{paymentStatusLabel(o.payment_status)}</span>
       </div>
       <div className="text-sm text-neutral-500">{formatDate(o.created_at)}</div>
 

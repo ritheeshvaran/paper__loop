@@ -27,7 +27,15 @@ const ForgotPassword = () => {
     e?.preventDefault(); setError(""); setBusy(true);
     try {
       const { data } = await api.post("/auth/send-otp", { email, purpose: "password_reset" });
-      toast.success("If that email can receive a code, one has been sent.");
+      const delivery = data.delivery || "sent";
+      if (delivery === "sent") {
+        toast.success("Reset code sent. Check your inbox (and spam).");
+      } else if (delivery === "skipped") {
+        toast.message("If that email can receive a code, one has been sent.", { duration: 10000 });
+      } else {
+        toast.error("Email delivery failed. Use the on-screen code if shown, or try again.");
+        setError(data.warning || "Could not deliver the verification email.");
+      }
       if (data.dev_code) toast.message("Dev code", { description: `OTP: ${data.dev_code}`, duration: 12000 });
       setStep(2);
       return data.retry_after ?? 60;

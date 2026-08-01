@@ -14,10 +14,18 @@ export const CartProvider = ({ children }) => {
   const [flyFrom, setFlyFrom] = useState(null); // { x, y, img } for fly-to-cart animation
 
   const refresh = useCallback(async () => {
-    if (!user) { setCart({ items: [], subtotal: 0, discount_total: 0, total: 0, delivery: 0 }); return; }
+    if (!user) { setCart({ items: [], subtotal: 0, discount_total: 0, total: 0, delivery: 0 }); setWishlist([]); return; }
     try {
       const [c, w] = await Promise.all([api.get("/cart"), api.get("/wishlist")]);
       setCart(c.data);
+      setWishlist(asArray(w.data));
+    } catch (e) { /* ignore */ }
+  }, [user]);
+
+  const refreshWishlist = useCallback(async () => {
+    if (!user) { setWishlist([]); return; }
+    try {
+      const w = await api.get("/wishlist");
       setWishlist(asArray(w.data));
     } catch (e) { /* ignore */ }
   }, [user]);
@@ -33,10 +41,14 @@ export const CartProvider = ({ children }) => {
       const { data } = await api.post("/cart", { product_id: product.id, quantity: qty });
       setCart(data);
       if (origin) setFlyFrom({ ...origin, img: (product.images || [])[0], key: Date.now() });
+      if (!data?.items?.length) {
+        toast.error("Couldn't add to bag — product unavailable");
+        return;
+      }
       toast.success(`${product.name} added to bag`);
       setTimeout(() => setDrawerOpen(true), 500);
     } catch (e) {
-      toast.error("Couldn't add to bag");
+      toast.error(e.response?.data?.detail || "Couldn't add to bag");
     }
   };
 
@@ -52,10 +64,15 @@ export const CartProvider = ({ children }) => {
 
   const toggleWishlist = async (product) => {
     if (!user) { toast("Sign in to save favorites"); return; }
-    const { data } = await api.post(`/wishlist/${product.id}`);
-    if (data.wishlisted) toast.success(`Saved "${product.name}"`);
-    else toast(`Removed "${product.name}" from wishlist`);
-    refresh();
+    try {
+      const { data } = await api.post(`/wishlist/${product.id}`);
+      if (data.wishlisted) toast.success(`Saved "${product.name}"`);
+      else toast(`Removed "${product.name}" from wishlist`);
+      // Wishlist-only refresh — never re-fetch cart here (races with addToCart)
+      await refreshWishlist();
+    } catch (e) {
+      toast.error("Couldn't update wishlist");
+    }
   };
 
   const isWishlisted = (pid) => wishlist.some((p) => p.id === pid);

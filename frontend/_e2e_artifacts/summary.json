@@ -1,0 +1,29 @@
+{
+  "results": {
+    "email": "buyer.65ed1cad@gmail.com",
+    "productSlug": "sweet-bear-unicorn-keychain",
+    "cartTotal": "₹628",
+    "txn": "TXN5576695823",
+    "orderId": "8bb60d47-f6e2-42fa-a3b7-0ef6eedb9728",
+    "orderNumber": "ORDER PL-2026-00006"
+  },
+  "failures": [],
+  "consoleErrors": [
+    "console: Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+  ],
+  "networkFails": [
+    {
+      "url": "http://127.0.0.1:3000/api/orders/10a38345-319e-4bca-9efe-d7191d915491",
+      "status": 401
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/cart",
+      "status": 401
+    },
+    {
+      "url": "http://127.0.0.1:3000/api/wishlist",
+      "status": 401
+    }
+  ],
+  "toLowerCase": []
+}

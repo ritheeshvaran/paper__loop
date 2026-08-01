@@ -31,8 +31,22 @@ const Register = () => {
     setError(""); setBusy(true);
     try {
       const { data } = await api.post("/auth/send-otp", { email, purpose: "registration" });
-      toast.success("If that email can receive a code, one has been sent.");
-      if (data.dev_code) toast.message("Dev code (email not configured)", { description: `OTP: ${data.dev_code}`, duration: 12000 });
+      const delivery = data.delivery || "sent";
+      if (delivery === "sent") {
+        toast.success("Verification code sent. Check your inbox (and spam).");
+      } else if (delivery === "skipped") {
+        // Anti-enumeration: email may already be registered — same UX, clearer next step
+        toast.message("If that email can receive a code, one has been sent.", {
+          description: "Already have an account? Sign in instead.",
+          duration: 10000,
+        });
+      } else {
+        toast.error("Email delivery failed. Use the on-screen code if shown, or try again.");
+        setError(data.warning || "Could not deliver the verification email.");
+      }
+      if (data.dev_code) {
+        toast.message("Dev code", { description: `OTP: ${data.dev_code}`, duration: 12000 });
+      }
       setStep(2);
       return data.retry_after ?? 60;
     } catch (err) {
@@ -156,9 +170,9 @@ export const OtpStep = ({ email, purpose, onVerified, onBack, onResend }) => {
   const doResend = async () => {
     if (resend > 0) return;
     try {
+      // onResend (Register/ForgotPassword sendOtp) already shows delivery toasts
       const data = onResend ? await onResend() : null;
       const retry = typeof data === "number" ? data : 60;
-      toast.success("If that email can receive a code, one has been sent.");
       setResend(retry);
       setDigits(["", "", "", "", "", ""]);
       refs.current[0]?.focus();

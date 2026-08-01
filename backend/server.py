@@ -77,6 +77,20 @@ if APP_ENV == "production" and not email_configured():
     logging.getLogger("paperloop").error(
         "PRODUCTION: No email provider configured. Set RESEND_API_KEY or SMTP_* — OTP will fail until configured."
     )
+# Render always sets RENDER=true — catch misconfigured APP_ENV on the live service
+_paperloop_boot = logging.getLogger("paperloop")
+if os.environ.get("RENDER") == "true" and APP_ENV != "production":
+    _paperloop_boot.error(
+        "RENDER DETECTED but APP_ENV=%s (expected production). "
+        "OTP failures return HTTP 200 with delivery errors, rate limits are off, "
+        "and send-otp responses include dev_code. Set APP_ENV=production in the Render dashboard.",
+        APP_ENV,
+    )
+_paperloop_boot.info(
+    "Email config: configured=%s app_env=%s",
+    email_configured(),
+    APP_ENV,
+)
 
 
 def _mongo_cluster_label(url: str) -> str:
@@ -800,6 +814,11 @@ async def get_cart(user: dict = Depends(get_current_user)):
 
 @api.post("/cart")
 async def add_to_cart(inp: CartItemInput, user: dict = Depends(get_current_user)):
+    product = await db.products.find_one({"id": inp.product_id, "visibility": "published"})
+    if not product:
+        raise HTTPException(404, "Product not found")
+    if int(product.get("stock_quantity") or 0) < 1:
+        raise HTTPException(400, "Out of stock")
     existing = await db.carts.find_one({"user_id": user["id"], "product_id": inp.product_id})
     if existing:
         await db.carts.update_one({"_id": existing["_id"]},
@@ -1053,24 +1072,34 @@ async def admin_approve_payment(order_id: str, inp: PaymentDecisionInput,
         raise HTTPException(404, "Order not found")
     if order["status"] not in ("placed", "payment_under_validation"):
         raise HTTPException(400, "Order is not awaiting payment verification")
+    now = now_iso()
     await db.orders.update_one({"id": order_id}, {
         "$set": {
             "status": "approved",
             "payment_status": "verified",
-            "updated_at": now_iso(),
+            "updated_at": now,
         },
-        "$push": {"timeline": {
-            "status": "approved",
-            "at": now_iso(),
-            "note": inp.note or "Payment approved",
-            "by": admin["email"],
-        }},
+        "$push": {"timeline": {"$each": [
+            {
+                "status": "payment_under_validation",
+                "at": now,
+                "note": inp.note or "Payment Approved",
+                "by": admin["email"],
+            },
+            {
+                "status": "approved",
+                "at": now,
+                "note": "Order Confirmed",
+                "by": admin["email"],
+            },
+        ]}},
     })
     await _log(admin, "payment_approved", "order", order_id, order.get("payment_status"), "verified")
     asyncio.create_task(email_service.send(
         order["customer_email"],
-        f"Payment verified — {order['order_number']}",
-        f"<p>Your payment for <b>{order['order_number']}</b> was verified. We're preparing your order.</p>",
+        f"Payment Approved — {order['order_number']}",
+        f"<p>Your payment for <b>{order['order_number']}</b> was approved. "
+        f"Your order is now <b>Order Confirmed</b>.</p>",
     ))
     return strip_id(await db.orders.find_one({"id": order_id}))
 
@@ -1083,6 +1112,7 @@ async def admin_reject_payment(order_id: str, inp: PaymentDecisionInput,
         raise HTTPException(404, "Order not found")
     if order["status"] not in ("placed", "payment_under_validation"):
         raise HTTPException(400, "Order is not awaiting payment verification")
+    reject_note = inp.note or "Payment Rejected — please resubmit a valid UPI transaction ID and screenshot."
     await db.orders.update_one({"id": order_id}, {
         "$set": {
             "status": "placed",
@@ -1092,16 +1122,16 @@ async def admin_reject_payment(order_id: str, inp: PaymentDecisionInput,
         "$push": {"timeline": {
             "status": "placed",
             "at": now_iso(),
-            "note": inp.note or "Payment rejected — please resubmit",
+            "note": reject_note,
             "by": admin["email"],
         }},
     })
     await _log(admin, "payment_rejected", "order", order_id, order.get("payment_status"), "rejected")
     asyncio.create_task(email_service.send(
         order["customer_email"],
-        f"Payment needs attention — {order['order_number']}",
-        f"<p>We could not verify payment for <b>{order['order_number']}</b>. "
-        f"{inp.note or 'Please resubmit a valid UPI transaction ID and screenshot.'}</p>",
+        f"Payment Rejected — {order['order_number']}",
+        f"<p>Payment for <b>{order['order_number']}</b> was rejected.</p>"
+        f"<p>{reject_note}</p><p>Please open your order and use <b>Retry Payment</b>.</p>",
     ))
     return strip_id(await db.orders.find_one({"id": order_id}))
 
@@ -1602,14 +1632,18 @@ app.include_router(api)
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_legacy")
 
-# Explicit allow-list — never use "*" with allow_credentials=True
+# CORS — explicit origins + Vercel preview regex (never allow_origins="*" with credentials)
 _DEFAULT_CORS_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://paper-loop-a22l94ils-ritheeshvaran2007-2720s-projects.vercel.app",
     "https://paperloop.shop",
     "https://www.paperloop.shop",
 ]
+# Matches any Vercel deployment/preview URL (safe with allow_credentials — echoes exact Origin)
+_CORS_VERCEL_REGEX = os.environ.get(
+    "CORS_ORIGIN_REGEX",
+    r"https://.*\.vercel\.app",
+)
 
 
 def _build_cors_origins() -> list[str]:
@@ -1624,10 +1658,16 @@ def _build_cors_origins() -> list[str]:
 _cors_origins = _build_cors_origins()
 if APP_ENV == "production" and not _cors_origins:
     log.error("CORS_ORIGINS must be an explicit allow-list in production")
+log.info(
+    "CORS allow_origins=%s allow_origin_regex=%s",
+    _cors_origins,
+    _CORS_VERCEL_REGEX,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
     allow_origins=_cors_origins,
+    allow_origin_regex=_CORS_VERCEL_REGEX,
     allow_methods=["*"],
     allow_headers=["*"],
 )

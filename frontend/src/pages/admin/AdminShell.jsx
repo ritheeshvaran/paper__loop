@@ -33,7 +33,7 @@ const AdminShell = () => {
               key={n.to}
               to={n.to}
               end={n.end}
-              data-testid={`admin-nav-${n.label.toLowerCase()}`}
+              data-testid={`admin-nav-${(n.label || "").toLowerCase()}`}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3 py-2 text-sm transition-colors ${isActive ? "bg-[color:var(--pl-orange)] text-white" : "text-neutral-300 hover:bg-neutral-900 hover:text-white"}`
               }

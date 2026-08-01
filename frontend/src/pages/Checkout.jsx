@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { formatINR } from "@/lib/format";
+import { resolveMedia } from "@/lib/media";
 import { toast } from "sonner";
 
 const Checkout = () => {
@@ -86,7 +87,7 @@ const Checkout = () => {
             <ul className="divide-y divide-neutral-100">
               {cart.items?.map((it) => (
                 <li key={it.product_id} className="py-3 flex gap-3 text-sm">
-                  <img src={it.product.images?.[0]} alt="" className="w-12 h-14 object-cover bg-neutral-100" />
+                  <img src={resolveMedia(it.product?.images?.[0])} alt="" className="w-12 h-14 object-cover bg-neutral-100" />
                   <div className="flex-1 min-w-0">
                     <div className="uppercase tracking-tight truncate">{it.product.name}</div>
                     <div className="text-xs text-neutral-500">× {it.quantity}</div>
