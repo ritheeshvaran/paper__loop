@@ -11,18 +11,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { toast } from "sonner";
 
-/* ── Collection & universe helpers (from live inventory only) ─────────── */
-const COLLECTION_DEFS = [
-  { key: "anime", label: "Anime Posters", href: "/shop?type=posters&theme=anime", match: (p) => p.category_slug === "anime" },
-  { key: "keychains", label: "Keychains", href: "/shop?type=keychains", match: (p) => p.category_slug === "keychains" },
-  { key: "movies", label: "Movies", href: "/shop?type=posters&theme=movies", match: (p) => p.category_slug === "movies" },
-  { key: "cars", label: "Cars", href: "/shop?type=posters&theme=cars", match: (p) => p.category_slug === "cars" },
-  { key: "limited", label: "Limited Editions", href: "/shop", match: (p) => !!p.is_limited },
-  { key: "sports", label: "Sports", href: "/shop?type=posters&theme=sports", match: (p) => p.category_slug === "sports" },
-  { key: "music", label: "Music", href: "/shop?type=posters&theme=music", match: (p) => p.category_slug === "music" },
-  { key: "cities", label: "Cities", href: "/shop?type=posters&theme=cities", match: (p) => p.category_slug === "cities" },
-  { key: "fashion", label: "Fashion", href: "/shop?type=posters&theme=fashion", match: (p) => p.category_slug === "fashion" },
-];
+/* ── Collection helpers (shop types only) ─────────────────────────────── */
 
 const UNIVERSE_DEFS = [
   { label: "Spider-Man", href: "/shop?type=posters&theme=movies", keywords: ["spider-man", "spider man", "iron spider"] },
@@ -53,15 +42,46 @@ const WHY_POINTS = [
   { t: "Fast support", d: "Real humans on WhatsApp and email when you need a hand." },
 ];
 
+const ROOM_SCENES = [
+  {
+    id: "bedroom",
+    label: "Bedroom wall",
+    note: "Quiet archive",
+    // Absolute poster placements — gallery wall, not product grid
+    frames: [
+      { top: "8%", left: "6%", width: "28%", height: "52%", rotate: -1.2 },
+      { top: "10%", left: "37%", width: "26%", height: "46%", rotate: 0.6 },
+      { top: "8%", left: "66%", width: "28%", height: "50%", rotate: 1.1 },
+      { top: "64%", left: "10%", width: "22%", height: "28%", rotate: -0.4 },
+      { top: "60%", left: "36%", width: "28%", height: "32%", rotate: 0.8 },
+      { top: "62%", left: "68%", width: "24%", height: "30%", rotate: -0.7 },
+    ],
+  },
+  {
+    id: "gaming",
+    label: "Gaming setup",
+    note: "Night desk",
+    frames: [
+      { top: "6%", left: "4%", width: "22%", height: "58%", rotate: -0.8 },
+      { top: "10%", left: "28%", width: "20%", height: "42%", rotate: 0.4 },
+      { top: "6%", left: "50%", width: "22%", height: "56%", rotate: -0.3 },
+      { top: "8%", left: "74%", width: "22%", height: "48%", rotate: 1.0 },
+      { top: "56%", left: "26%", width: "24%", height: "36%", rotate: 0.5 },
+      { top: "58%", left: "54%", width: "22%", height: "34%", rotate: -0.6 },
+      { top: "62%", left: "78%", width: "18%", height: "30%", rotate: 0.9 },
+    ],
+  },
+];
+
 const productText = (p) => `${p?.name || ""} ${p?.description || ""}`.toLowerCase();
 
 /* ── Cinematic Hero ────────────────────────────────────────────────────── */
-const Hero = ({ heroBg, logoSrc, navOffset = 104 }) => {
+const Hero = ({ heroBg, navOffset = 68 }) => {
   const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 600], [0, 80]);
-  const scale = useTransform(scrollY, [0, 600], [1.06, 1.14]);
-  const overlay = useTransform(scrollY, [0, 400], [0.28, 0.55]);
-  const contentY = useTransform(scrollY, [0, 400], [0, -40]);
+  const y = useTransform(scrollY, [0, 600], [0, 70]);
+  const scale = useTransform(scrollY, [0, 600], [1.04, 1.1]);
+  const overlay = useTransform(scrollY, [0, 400], [0.3, 0.48]);
+  const contentY = useTransform(scrollY, [0, 400], [0, -36]);
   const contentOpacity = useTransform(scrollY, [0, 380], [1, 0]);
 
   return (
@@ -69,64 +89,31 @@ const Hero = ({ heroBg, logoSrc, navOffset = 104 }) => {
       className="relative w-full text-white overflow-hidden"
       style={{ height: "min(100svh, 100vh)" }}
     >
-      <motion.div style={{ y, scale }} className="absolute inset-[-4%]">
+      <motion.div style={{ y, scale }} className="absolute inset-[-3%]">
         <img
           src={heroBg}
           alt=""
           className="absolute inset-0 w-full h-full object-cover"
-          style={{ objectPosition: "center 48%" }}
+          style={{ objectPosition: "center 42%" }}
           fetchPriority="high"
         />
+        {/* Subtle dark overlay only — readability without decorative gradients */}
         <motion.div className="absolute inset-0 bg-black" style={{ opacity: overlay }} />
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "linear-gradient(105deg, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.35) 42%, rgba(0,0,0,0.12) 70%, rgba(0,0,0,0.45) 100%)",
-          }}
-        />
-        <div
-          className="absolute inset-0"
-          style={{
-            background: "linear-gradient(180deg, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.7) 100%)",
-          }}
-        />
       </motion.div>
 
       <motion.div
         style={{ y: contentY, opacity: contentOpacity, paddingTop: navOffset }}
-        className="relative z-10 h-full pl-container flex flex-col justify-center"
+        className="relative z-10 h-full pl-container flex flex-col justify-center items-start"
       >
-        <div className="max-w-2xl lg:max-w-[56%]">
-          <motion.div
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, delay: 0.1 }}
-            className="mb-6 md:mb-8"
-          >
-            {logoSrc ? (
-              <motion.img
-                src={logoSrc}
-                alt="Paper & Loop"
-                className="h-16 md:h-20 lg:h-24 w-auto max-w-[min(100%,280px)] object-contain drop-shadow-[0_8px_28px_rgba(0,0,0,0.45)]"
-                animate={{ y: [0, -6, 0] }}
-                transition={{ duration: 6.5, repeat: Infinity, ease: "easeInOut" }}
-              />
-            ) : (
-              <div className="font-display uppercase tracking-tight text-2xl md:text-3xl">
-                Paper <span className="text-[color:var(--pl-orange)]">&</span> Loop
-              </div>
-            )}
-          </motion.div>
-
+        <div className="w-full max-w-[20rem] sm:max-w-md md:max-w-xl lg:max-w-[42%] xl:max-w-[38%] mr-auto text-left">
           <h1
             data-testid="hero-title"
             className="font-display uppercase text-white"
             style={{
               fontWeight: 900,
-              lineHeight: 0.9,
+              lineHeight: 0.88,
               letterSpacing: "-0.035em",
-              fontSize: "clamp(2.5rem, 7.2vw, 6.4rem)",
+              fontSize: "clamp(3rem, 8.6vw, 7.7rem)",
             }}
           >
             {[
@@ -138,7 +125,7 @@ const Hero = ({ heroBg, logoSrc, navOffset = 104 }) => {
                 <motion.span
                   initial={{ y: "108%" }}
                   animate={{ y: "0%" }}
-                  transition={{ duration: 1.05, delay: 0.28 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: 1.05, delay: 0.2 + i * 0.12, ease: [0.16, 1, 0.3, 1] }}
                   style={{ display: "inline-block" }}
                   className={orange ? "text-[color:var(--pl-orange)]" : ""}
                 >
@@ -151,8 +138,8 @@ const Hero = ({ heroBg, logoSrc, navOffset = 104 }) => {
           <motion.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.05, duration: 0.65 }}
-            className="mt-6 md:mt-7 text-white/75 max-w-lg text-sm md:text-base lg:text-[1.05rem] leading-relaxed"
+            transition={{ delay: 0.95, duration: 0.65 }}
+            className="mt-9 md:mt-11 text-white/75 max-w-md text-sm md:text-base lg:text-lg leading-relaxed"
           >
             Premium posters and acrylic keychains for collectors who curate their space with intent.
           </motion.p>
@@ -160,8 +147,8 @@ const Hero = ({ heroBg, logoSrc, navOffset = 104 }) => {
           <motion.div
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.25, duration: 0.55 }}
-            className="mt-8 md:mt-10 flex flex-wrap gap-3"
+            transition={{ delay: 1.2, duration: 0.55 }}
+            className="pl-hero-cta mt-11 md:mt-14 flex flex-wrap gap-3"
           >
             <MagneticButton to="/shop" primary testId="hero-shop-btn">
               Shop Collection <ArrowRight className="w-4 h-4" />
@@ -243,6 +230,132 @@ const SectionHead = ({ kicker, title, accent, to, linkLabel, light = false }) =>
     )}
   </div>
 );
+
+/* ── Immersive collector rooms ────────────────────────────────────────── */
+const CollectorWall = ({ scene, posters }) => {
+  const frames = scene.frames.map((frame, i) => ({
+    ...frame,
+    poster: posters[i % posters.length],
+  }));
+
+  return (
+    <div className="relative">
+      <div className="mb-5 flex items-baseline justify-between gap-4">
+        <div className="font-display uppercase tracking-tight text-lg md:text-xl text-white">{scene.label}</div>
+        <div className="text-[10px] uppercase tracking-[0.28em] text-white/40">{scene.note}</div>
+      </div>
+
+      <div
+        className="relative w-full overflow-hidden"
+        style={{
+          aspectRatio: "16 / 10",
+          background:
+            "radial-gradient(ellipse at 50% 0%, #2a2a2a 0%, #141414 45%, #0a0a0a 100%)",
+          boxShadow: "inset 0 0 80px rgba(0,0,0,0.55)",
+        }}
+      >
+        {/* Soft wall wash — not a decorative gradient overlay on content */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 28%, rgba(0,0,0,0.35) 100%)",
+          }}
+        />
+
+        {/* Desk / floor ledge for room depth */}
+        <div
+          className="absolute inset-x-0 bottom-0 h-[14%] pointer-events-none"
+          style={{
+            background: "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.55) 40%, #070707 100%)",
+            borderTop: "1px solid rgba(255,255,255,0.04)",
+          }}
+        />
+
+        {frames.map((f, i) => (
+          <div
+            key={`${scene.id}-${i}`}
+            className="absolute"
+            style={{
+              top: f.top,
+              left: f.left,
+              width: f.width,
+              height: f.height,
+              transform: `rotate(${f.rotate}deg)`,
+            }}
+          >
+            <div
+              className="relative w-full h-full bg-[#1a1a1a]"
+              style={{
+                padding: "3.5%",
+                boxShadow:
+                  "0 18px 40px rgba(0,0,0,0.55), 0 2px 0 rgba(255,255,255,0.04) inset",
+              }}
+            >
+              <img
+                src={resolveMedia(f.poster)}
+                alt=""
+                loading="lazy"
+                className="w-full h-full object-cover"
+                style={{ boxShadow: "0 0 0 1px rgba(0,0,0,0.35)" }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const WallsWithIntent = ({ posters }) => {
+  if (posters.length < 4) return null;
+
+  // Prefer anime/movies for a collector-wall feel; cycle them for density
+  const focus = posters.filter((p) => ["anime", "movies"].includes(p.category_slug) && p.images?.[0]);
+  const rest = posters.filter((p) => !["anime", "movies", "keychains"].includes(p.category_slug) && p.images?.[0]);
+  const pool = [...focus, ...rest];
+  const urls = pool.map((p) => p.images[0]).filter(Boolean);
+  if (urls.length < 4) return null;
+
+  const pick = (offset, count) => Array.from({ length: count }, (_, i) => urls[(offset + i) % urls.length]);
+  const roomA = pick(0, 6);
+  const roomB = pick(2, 7);
+
+  return (
+    <section className="bg-[color:var(--pl-black)] py-24 md:py-32" data-testid="walls-with-intent">
+      <div className="pl-container">
+        <FadeUp>
+          <div className="max-w-2xl mb-12 md:mb-16">
+            <div className="text-[11px] tracking-[0.28em] uppercase text-white/40 mb-4">Room Inspiration</div>
+            <h2 className="font-display text-editorial uppercase text-white">
+              Walls with <span className="text-[color:var(--pl-orange)]">intent.</span>
+            </h2>
+            <p className="mt-5 text-white/50 text-sm md:text-base leading-relaxed max-w-md">
+              Step into a collector&apos;s room — posters layered the way they live on real walls.
+            </p>
+          </div>
+        </FadeUp>
+
+        <div className="space-y-14 md:space-y-20">
+          <FadeUp>
+            <CollectorWall scene={ROOM_SCENES[0]} posters={roomA} />
+          </FadeUp>
+          <FadeUp delay={0.08}>
+            <CollectorWall scene={ROOM_SCENES[1]} posters={roomB} />
+          </FadeUp>
+        </div>
+
+        <FadeUp delay={0.1}>
+          <div className="mt-12 md:mt-14 flex justify-start">
+            <Link to="/shop?type=posters" className="pl-btn pl-btn-ghost-dark">
+              Shop posters <ArrowUpRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </FadeUp>
+      </div>
+    </section>
+  );
+};
 
 /* ── Testimonials & newsletter ────────────────────────────────────────── */
 const Testimonials = ({ items }) => {
@@ -349,7 +462,7 @@ const NewsletterForm = () => {
 const Home = ({ settings }) => {
   const [products, setProducts] = useState([]);
   const [testimonials, setTestimonials] = useState([]);
-  const navOffset = settings?.announcement ? 104 : 68;
+  const navOffset = 68;
 
   useEffect(() => {
     fetchProducts({ limit: 48, sort: "newest" }).then(setProducts).catch(() => setProducts([]));
@@ -359,13 +472,31 @@ const Home = ({ settings }) => {
   const list = asArray(products);
 
   const collections = useMemo(() => {
-    const built = COLLECTION_DEFS.map((def) => {
-      const matches = list.filter(def.match);
-      if (!matches.length) return null;
-      const cover = matches.find((p) => p.images?.[0]) || matches[0];
-      return { ...def, cover, count: matches.length };
-    }).filter(Boolean);
-    return built.slice(0, 6);
+    const posters = list.filter((p) => p.category_slug !== "keychains" && p.images?.[0]);
+    const keychains = list.filter((p) => p.category_slug === "keychains" && p.images?.[0]);
+    return [
+      {
+        key: "posters",
+        label: "Posters",
+        href: "/shop?type=posters",
+        image: posters[0]?.images?.[0] || list.find((p) => p.images?.[0])?.images?.[0],
+        comingSoon: false,
+      },
+      {
+        key: "keychains",
+        label: "Keychains",
+        href: "/shop?type=keychains",
+        image: keychains[0]?.images?.[0] || brandAsset("comingSoonAccessories"),
+        comingSoon: false,
+      },
+      {
+        key: "tshirts",
+        label: "T-Shirts",
+        href: null,
+        image: brandAsset("comingSoonTees"),
+        comingSoon: true,
+      },
+    ].filter((c) => c.image);
   }, [list]);
 
   const newest = useMemo(() => {
@@ -376,11 +507,6 @@ const Home = ({ settings }) => {
   const bestSellers = useMemo(() => {
     const marked = list.filter((p) => p.is_best_seller);
     return (marked.length ? marked : list.slice(0, 4)).slice(0, 4);
-  }, [list]);
-
-  const collectorPicks = useMemo(() => {
-    const marked = list.filter((p) => p.is_featured);
-    return (marked.length ? marked : list).slice(0, 4);
   }, [list]);
 
   const universes = useMemo(() => (
@@ -394,18 +520,16 @@ const Home = ({ settings }) => {
     }).filter(Boolean)
   ), [list]);
 
-  const collage = useMemo(() => list.filter((p) => p.images?.[0]).slice(0, 6), [list]);
+  const wallPosters = useMemo(
+    () => list.filter((p) => p.category_slug !== "keychains" && p.images?.[0]),
+    [list],
+  );
 
   const heroBg = resolveMedia(settings?.hero_background_url || brandAsset("hero"));
-  const logoSrc = resolveMedia(
-    settings?.logo_url && !/emergent|unsplash|pexels/i.test(settings.logo_url)
-      ? settings.logo_url
-      : brandAsset("logo"),
-  );
 
   return (
     <div className="bg-[color:var(--pl-black)]">
-      <Hero heroBg={heroBg} logoSrc={logoSrc} navOffset={navOffset} />
+      <Hero heroBg={heroBg} navOffset={navOffset} />
 
       {/* Marquee */}
       <div className="bg-[color:var(--pl-orange)] text-white overflow-hidden border-y border-white/5">
@@ -420,48 +544,74 @@ const Home = ({ settings }) => {
         </div>
       </div>
 
-      {/* 02 — Featured Collections */}
+      {/* Shop by Collection — Posters · Keychains · T-Shirts */}
       {collections.length > 0 && (
-        <section className="pl-section-light py-24 md:py-32">
+        <section className="pl-section-light py-24 md:py-32" data-testid="shop-by-collection">
           <div className="pl-container">
             <SectionHead
               light
-              kicker="01 · Featured Collections"
-              title="Curated"
-              accent="drops."
+              kicker="01 · Shop by Collection"
+              title="Shop by"
+              accent="collection."
               to="/shop"
               linkLabel="Browse shop"
             />
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-5">
-              {collections.map((c, i) => (
-                <FadeUp key={c.key} delay={i * 0.05}>
-                  <Link
-                    to={c.href}
-                    className="group relative block aspect-[4/5] overflow-hidden bg-neutral-200"
-                    data-cursor="Open"
-                  >
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+              {collections.map((c, i) => {
+                const inner = (
+                  <>
                     <img
-                      src={resolveMedia(c.cover.images?.[0])}
+                      src={resolveMedia(c.image)}
                       alt={c.label}
                       loading="lazy"
-                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                      className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${c.comingSoon ? "scale-100 opacity-80" : "group-hover:scale-105"}`}
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/15 to-transparent" />
-                    <div className="absolute inset-x-0 bottom-0 p-4 md:p-6">
-                      <div className="font-display uppercase text-white text-lg md:text-2xl tracking-tight">{c.label}</div>
-                      <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-white/65">
-                        {c.count} piece{c.count === 1 ? "" : "s"}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                    {c.comingSoon && (
+                      <div className="absolute top-4 right-4 md:top-5 md:right-5 z-10">
+                        <span className="inline-block text-[10px] uppercase tracking-[0.22em] font-bold bg-white/10 text-white border border-white/25 px-3 py-1.5 backdrop-blur-sm">
+                          Coming Soon
+                        </span>
                       </div>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 p-5 md:p-7">
+                      <div className="font-display uppercase text-white text-xl md:text-3xl tracking-tight">{c.label}</div>
+                      {!c.comingSoon && (
+                        <div className="mt-2 text-[10px] uppercase tracking-[0.22em] text-white/60">Explore</div>
+                      )}
                     </div>
-                  </Link>
-                </FadeUp>
-              ))}
+                  </>
+                );
+
+                return (
+                  <FadeUp key={c.key} delay={i * 0.05}>
+                    {c.comingSoon ? (
+                      <div
+                        className="relative block aspect-[4/5] overflow-hidden bg-neutral-200 cursor-not-allowed select-none"
+                        aria-disabled="true"
+                        data-testid="collection-tshirts-soon"
+                      >
+                        {inner}
+                      </div>
+                    ) : (
+                      <Link
+                        to={c.href}
+                        className="group relative block aspect-[4/5] overflow-hidden bg-neutral-200"
+                        data-cursor="Open"
+                        data-testid={`collection-${c.key}`}
+                      >
+                        {inner}
+                      </Link>
+                    )}
+                  </FadeUp>
+                );
+              })}
             </div>
           </div>
         </section>
       )}
 
-      {/* 03 — New Drop */}
+      {/* New Drop */}
       {newest.length > 0 && (
         <section className="pl-section-dark py-24 md:py-32">
           <div className="pl-container">
@@ -479,7 +629,7 @@ const Home = ({ settings }) => {
         </section>
       )}
 
-      {/* 04 — Best Sellers */}
+      {/* Best Sellers */}
       {bestSellers.length > 0 && (
         <section className="pl-section-light py-24 md:py-32">
           <div className="pl-container">
@@ -498,7 +648,7 @@ const Home = ({ settings }) => {
         </section>
       )}
 
-      {/* 05 — Browse by Universe */}
+      {/* Browse by Universe */}
       {universes.length > 0 && (
         <section className="pl-section-gray py-24 md:py-32">
           <div className="pl-container">
@@ -534,7 +684,7 @@ const Home = ({ settings }) => {
         </section>
       )}
 
-      {/* 06 — Why Paper & Loop */}
+      {/* Why Paper & Loop */}
       <section className="pl-section-dark py-24 md:py-32">
         <div className="pl-container">
           <FadeUp>
@@ -559,72 +709,14 @@ const Home = ({ settings }) => {
         </div>
       </section>
 
-      {/* 07 — Room Inspiration (product collage) */}
-      {collage.length >= 3 && (
-        <section className="pl-section-light py-24 md:py-32">
-          <div className="pl-container">
-            <SectionHead
-              light
-              kicker="06 · Room Inspiration"
-              title="Walls with"
-              accent="intent."
-              to="/shop?type=posters"
-              linkLabel="Shop posters"
-            />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3 auto-rows-[140px] md:auto-rows-[200px]">
-              {collage.map((p, i) => {
-                const span =
-                  i === 0 ? "md:col-span-2 md:row-span-2" :
-                  i === 3 ? "md:col-span-2" : "";
-                return (
-                  <FadeUp key={p.id} delay={i * 0.05} className={span}>
-                    <Link
-                      to={`/product/${p.slug}`}
-                      className="group relative block h-full min-h-[140px] overflow-hidden bg-neutral-200"
-                      data-cursor="View"
-                    >
-                      <img
-                        src={resolveMedia(p.images?.[0])}
-                        alt={p.name}
-                        loading="lazy"
-                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/35 transition-colors duration-500" />
-                      <div className="absolute inset-x-0 bottom-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                        <div className="font-display uppercase text-white text-sm tracking-tight">{p.name}</div>
-                      </div>
-                    </Link>
-                  </FadeUp>
-                );
-              })}
-            </div>
-          </div>
-        </section>
-      )}
+      {/* Walls with Intent — immersive collector rooms */}
+      <WallsWithIntent posters={wallPosters} />
 
-      {/* 08 — Collector Picks */}
-      {collectorPicks.length > 0 && (
-        <section className="pl-section-dark py-24 md:py-32">
-          <div className="pl-container">
-            <SectionHead
-              kicker="07 · Collector Picks"
-              title="Editorial"
-              accent="selection."
-              to="/shop"
-              linkLabel="Explore"
-            />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-5 md:gap-7">
-              {collectorPicks.map((p, i) => <ProductCard key={p.id} product={p} index={i} dark />)}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* 09 — Ordering Process */}
+      {/* Ordering Process */}
       <section className="pl-section-gray py-24 md:py-32">
         <div className="pl-container">
           <FadeUp>
-            <div className="text-[11px] tracking-[0.28em] uppercase text-neutral-500 mb-4">08 · Ordering Process</div>
+            <div className="text-[11px] tracking-[0.28em] uppercase text-neutral-500 mb-4">Ordering Process</div>
             <h2 className="font-display text-editorial uppercase mb-14">
               From browse to <span className="text-[color:var(--pl-orange)]">doorstep.</span>
             </h2>
@@ -647,23 +739,23 @@ const Home = ({ settings }) => {
         </div>
       </section>
 
-      {/* 10 — Testimonials */}
+      {/* Testimonials */}
       {asArray(testimonials).length > 0 && (
         <section className="pl-section-dark py-24 md:py-32">
           <div className="pl-container text-white">
             <FadeUp>
-              <div className="text-center text-[11px] tracking-[0.28em] uppercase text-white/45 mb-10">09 · Word on the wall</div>
+              <div className="text-center text-[11px] tracking-[0.28em] uppercase text-white/45 mb-10">Word on the wall</div>
               <Testimonials items={testimonials} />
             </FadeUp>
           </div>
         </section>
       )}
 
-      {/* 11 — Newsletter */}
+      {/* Newsletter */}
       <section className="pl-section-dark py-24 md:py-32 border-t border-white/10">
         <div className="pl-container text-center">
           <FadeUp>
-            <div className="text-[11px] tracking-[0.28em] uppercase text-[color:var(--pl-orange)] mb-4">10 · Drop Alerts</div>
+            <div className="text-[11px] tracking-[0.28em] uppercase text-[color:var(--pl-orange)] mb-4">Drop Alerts</div>
             <h2 className="font-display text-editorial uppercase text-white max-w-3xl mx-auto">
               First to know, <span className="text-[color:var(--pl-orange)]">first to own.</span>
             </h2>

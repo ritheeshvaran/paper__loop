@@ -5,7 +5,6 @@ import { Search, ShoppingBag, User, Menu, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { fetchProducts } from "@/lib/products";
-import { api } from "@/lib/api";
 import { resolveMedia } from "@/lib/media";
 import { brandAsset } from "@/lib/assets";
 import { asArray } from "@/lib/lists";
@@ -19,14 +18,7 @@ const links = [
 const ANNOUNCEMENT_H = 36;
 const NAV_H = 68;
 
-export const useNavOffset = () => {
-  const loc = useLocation();
-  const [hasAnnouncement, setHasAnnouncement] = useState(false);
-  useEffect(() => {
-    api.get("/settings").then((r) => setHasAnnouncement(!!r.data?.announcement)).catch(() => {});
-  }, [loc.pathname]);
-  return hasAnnouncement ? ANNOUNCEMENT_H + NAV_H : NAV_H;
-};
+export const useNavOffset = () => NAV_H;
 
 export const Nav = ({ settings }) => {
   const [scrolled, setScrolled] = useState(false);
@@ -37,7 +29,6 @@ export const Nav = ({ settings }) => {
   const loc = useLocation();
 
   const isHome = loc.pathname === "/";
-  const hasAnnouncement = Boolean(settings?.announcement);
   const overHero = isHome && !scrolled;
 
   useEffect(() => {
@@ -67,33 +58,28 @@ export const Nav = ({ settings }) => {
         className={`${isHome ? "fixed" : "sticky"} top-0 left-0 right-0 z-50`}
         data-testid="site-nav-wrap"
       >
-        {hasAnnouncement && (
-          <div
-            data-testid="announcement-bar"
-            className="bg-[color:var(--pl-black)] text-white text-center text-[11px] tracking-widest uppercase py-2.5 font-medium"
-          >
-            {settings.announcement}
-          </div>
-        )}
-
         <header
           data-testid="site-nav"
           className={`${navClass} text-white transition-[background,border-color,backdrop-filter] duration-500 ease-out`}
           style={{ height: NAV_H }}
         >
-          <div className="pl-container flex items-center justify-between h-full gap-6">
-            <Link to="/" data-testid="nav-logo" className="flex items-center shrink-0 group" data-cursor="Home">
+          <div className="pl-container flex items-center justify-between h-full gap-4 md:gap-6">
+            <Link
+              to="/"
+              data-testid="nav-logo"
+              className="flex items-center gap-2.5 md:gap-3.5 shrink-0 min-w-0 group"
+              data-cursor="Home"
+            >
               {logoSrc ? (
                 <img
                   src={logoSrc}
-                  alt="Paper & Loop"
-                  className="h-11 md:h-12 w-auto max-w-[168px] object-contain transition-opacity duration-300 group-hover:opacity-90"
+                  alt=""
+                  className="h-[52px] md:h-[56px] w-auto max-h-[56px] object-contain transition-opacity duration-300 group-hover:opacity-90"
                 />
-              ) : (
-                <span className="font-display text-[15px] tracking-[-0.02em] uppercase text-white group-hover:text-white/90 transition-colors">
-                  Paper <span className="text-[color:var(--pl-orange)]">&</span> Loop
-                </span>
-              )}
+              ) : null}
+              <span className="font-display font-bold text-[14px] sm:text-[15px] md:text-[17px] tracking-[-0.025em] uppercase text-white leading-none whitespace-nowrap group-hover:text-white/90 transition-colors">
+                Paper <span className="text-[color:var(--pl-orange)]">&</span> Loop
+              </span>
             </Link>
 
             <nav className="hidden lg:flex items-center gap-11 absolute left-1/2 -translate-x-1/2">

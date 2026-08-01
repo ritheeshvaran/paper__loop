@@ -217,6 +217,23 @@ body {
 .pl-btn-ghost-dark { background: transparent; color: #fff; border: 1px solid rgba(255,255,255,0.5); }
 .pl-btn-ghost-dark:hover { background: #fff; color: var(--pl-black); border-color: #fff; }
 
+/* Hero CTA hover polish (homepage only) */
+.pl-hero-cta .pl-btn {
+    transition: background-color 280ms cubic-bezier(0.65,0,0.35,1),
+                color 280ms cubic-bezier(0.65,0,0.35,1),
+                border-color 280ms cubic-bezier(0.65,0,0.35,1),
+                transform 220ms cubic-bezier(0.16,1,0.3,1),
+                box-shadow 280ms cubic-bezier(0.65,0,0.35,1);
+}
+.pl-hero-cta .pl-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(255, 106, 0, 0.28);
+}
+.pl-hero-cta .pl-btn-ghost-dark:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 24px rgba(255, 255, 255, 0.12);
+}
+
 /* Section rhythm */
 .pl-section-dark { background: var(--pl-black); color: var(--pl-off-white); }
 .pl-section-light { background: var(--pl-off-white); color: var(--pl-black); }
