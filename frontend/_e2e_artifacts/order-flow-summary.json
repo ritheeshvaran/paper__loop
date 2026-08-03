@@ -1,0 +1,114 @@
+{
+  "results": [
+    {
+      "name": "register+otp",
+      "ok": true,
+      "detail": "qa.order.1785616100083@example.com"
+    },
+    {
+      "name": "admin-login",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "products-list",
+      "ok": true,
+      "detail": "ferrari-sf-25 stock=5"
+    },
+    {
+      "name": "checkout",
+      "ok": true,
+      "detail": "PL-2026-00012"
+    },
+    {
+      "name": "screenshot-required-api",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "payment-submit",
+      "ok": true,
+      "detail": "payment_under_validation"
+    },
+    {
+      "name": "approve-requires-delivery-date",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "admin-approve+delivery",
+      "ok": true,
+      "detail": "preparing"
+    },
+    {
+      "name": "review-create",
+      "ok": true,
+      "detail": "3c07dd9e-1886-46c0-8c3c-206973797db4"
+    },
+    {
+      "name": "review-hide-show",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "mark-delivered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stock-zero-blocks-cart",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "stock-restored-available",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "demo-user-removed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:homepage",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:shop-oos",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:login-admin",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:customer-order-single-badge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:order-detail-single-badge",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:admin-order-proof",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ui:mobile-home",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": [],
+  "failedRequests": [],
+  "orderNumber": "PL-2026-00012",
+  "customerEmail": "qa.order.1785616100083@example.com",
+  "passed": true
+}

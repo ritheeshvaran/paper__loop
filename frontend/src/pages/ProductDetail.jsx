@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { formatINR } from "@/lib/format";
 import { resolveMedia } from "@/lib/media";
 import { brandAsset, ROOM_TEMPLATES } from "@/lib/assets";
+import { isPurchasable, normalizeProductStatus } from "@/lib/productStatus";
 import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { toast } from "sonner";
@@ -41,8 +42,13 @@ const ProductDetail = () => {
   if (!product) return <div className="min-h-[60vh] flex items-center justify-center font-display uppercase tracking-widest">Loading…</div>;
 
   const images = [product.images?.[0], product.lifestyle_image, ...(product.images?.slice(1) || [])].filter(Boolean).map(resolveMedia);
-  const outOfStock = (product.stock_quantity ?? 0) <= 0;
-  const lowStock = !outOfStock && (product.stock_quantity ?? 0) < 5;
+  const status = normalizeProductStatus(product);
+  const canBuy = isPurchasable(product);
+  const soldOut = status === "SOLD_OUT";
+  const comingSoon = status === "COMING_SOON";
+  const stockEmpty = status === "ACTIVE" && (product.stock_quantity ?? 0) <= 0;
+  const showNotify = soldOut || comingSoon || stockEmpty;
+  const lowStock = canBuy && (product.stock_quantity ?? 0) < 5;
   const room = ROOM_TEMPLATES[roomIdx];
 
   return (
@@ -114,12 +120,16 @@ const ProductDetail = () => {
           </div>
 
           <div className="mt-2 flex items-center gap-2 text-xs">
-            {outOfStock ? (
-              <span className="uppercase tracking-widest text-neutral-500 font-bold">Out of Stock</span>
+            {soldOut ? (
+              <span className="uppercase tracking-widest text-neutral-500 font-bold" data-testid="pdp-sold-out">Sold Out</span>
+            ) : comingSoon ? (
+              <span className="uppercase tracking-widest text-[color:var(--pl-orange)] font-bold" data-testid="pdp-coming-soon">Coming Soon</span>
+            ) : stockEmpty ? (
+              <span className="uppercase tracking-widest text-neutral-500 font-bold" data-testid="pdp-oos">OUT OF STOCK</span>
             ) : lowStock ? (
               <span className="uppercase tracking-widest text-amber-700 font-bold">● Only {product.stock_quantity} left</span>
             ) : (
-              <span className="uppercase tracking-widest text-green-700 font-bold">● In Stock</span>
+              <span className="uppercase tracking-widest text-green-700 font-bold" data-testid="pdp-in-stock">● In Stock</span>
             )}
           </div>
 
@@ -141,12 +151,19 @@ const ProductDetail = () => {
 
           {/* Qty + CTA */}
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            {!outOfStock && (
+            {canBuy && (
               <>
                 <div className="inline-flex items-center border border-black">
                   <button data-testid="pdp-qty-dec" onClick={() => setQty(Math.max(1, qty - 1))} className="p-3 hover:bg-neutral-100"><Minus className="w-4 h-4" /></button>
                   <span className="px-4 font-tabular font-bold">{qty}</span>
-                  <button data-testid="pdp-qty-inc" onClick={() => setQty(qty + 1)} className="p-3 hover:bg-neutral-100"><Plus className="w-4 h-4" /></button>
+                  <button
+                    data-testid="pdp-qty-inc"
+                    onClick={() => setQty((q) => Math.min(product.stock_quantity || 1, q + 1))}
+                    disabled={qty >= (product.stock_quantity || 0)}
+                    className="p-3 hover:bg-neutral-100 disabled:opacity-40"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
                 </div>
                 <button
                   data-testid="pdp-add-to-cart"
@@ -160,19 +177,27 @@ const ProductDetail = () => {
                 </button>
               </>
             )}
-            {outOfStock && (
+            {showNotify && (
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
                   try {
                     await api.post("/restock-alert", { email: restockEmail, product_id: product.id });
-                    toast.success("We'll email you the moment it's back.");
+                    toast.success(comingSoon ? "We'll notify you when it's available." : "We'll email you the moment it's back.");
                     setRestockEmail("");
                   } catch { toast.error("Couldn't save. Try again."); }
                 }}
                 className="flex-1 min-w-[200px] flex gap-2"
               >
-                <input type="email" required value={restockEmail} onChange={(e) => setRestockEmail(e.target.value)} placeholder="Notify me when back" className="flex-1 border border-black px-3 py-3 focus:outline-none" data-testid="restock-email" />
+                <input
+                  type="email"
+                  required
+                  value={restockEmail}
+                  onChange={(e) => setRestockEmail(e.target.value)}
+                  placeholder={comingSoon ? "Notify me when available" : "Notify me when back"}
+                  className="flex-1 border border-black px-3 py-3 focus:outline-none"
+                  data-testid="restock-email"
+                />
                 <button data-testid="restock-submit" className="pl-btn pl-btn-dark"><Bell className="w-4 h-4" /> Notify Me</button>
               </form>
             )}

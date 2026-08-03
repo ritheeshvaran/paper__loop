@@ -1,6 +1,6 @@
 /** Paper & Loop brand assets — bundled in public/uploads/ for Vercel static hosting. */
 export const BRAND_ASSETS = {
-  hero: "/uploads/hero-background.png",
+  hero: "/uploads/hero-background.png?v=20260803",
   logo: "/uploads/logo-paper-loop.png",
   authLogin: "/uploads/auth-login.jpg",
   authRegister: "/uploads/auth-register.jpg",
@@ -9,7 +9,7 @@ export const BRAND_ASSETS = {
   roomBedroom: "/uploads/room-bedroom.jpg",
   roomGaming: "/uploads/room-gaming.jpg",
   roomLiving: "/uploads/room-living.jpg",
-  comingSoonTees: "/uploads/coming-soon-tees.jpg",
+  comingSoonTees: "/uploads/coming-soon-tees.png",
   comingSoonHoodies: "/uploads/coming-soon-hoodies.jpg",
   comingSoonAccessories: "/uploads/coming-soon-accessories.jpeg",
 };

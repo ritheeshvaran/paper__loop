@@ -383,6 +383,10 @@ const Testimonials = ({ items }) => {
               <Star key={k} className="w-4 h-4 fill-[color:var(--pl-orange)] text-[color:var(--pl-orange)]" />
             ))}
           </div>
+          {t.verified_purchase && (
+            <div className="mb-3 text-[10px] uppercase tracking-[0.22em] text-green-400">Verified Purchase</div>
+          )}
+          {t.title && <div className="font-display uppercase text-lg md:text-xl mb-2">{t.title}</div>}
           <p className="font-display text-2xl md:text-3xl leading-tight">"{t.quote}"</p>
           <div className="mt-6 text-[11px] uppercase tracking-widest text-white/60">
             — {t.name}{t.location ? ` · ${t.location}` : ""}

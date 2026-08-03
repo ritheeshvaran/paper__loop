@@ -141,7 +141,7 @@ PRODUCTS = [
 
 # UI / marketing assets copied from Images/ into uploads/
 BRAND_ASSETS = [
-    {"source": "Hero/hero-background.png", "filename": "hero-background.png"},
+    {"source": "Hero/bg/hero-background.png", "filename": "hero-background.png"},
     {"source": "Poster/44c1fcc262b26d1dc892e6737d5fcacf.jpg", "filename": "auth-login.jpg"},
     {"source": "Poster/37bc11c534e513292dc1a94147c4735f.jpg", "filename": "auth-register.jpg"},
     {"source": "Poster/99da93c360f3ed5e61167308833b0979.jpg", "filename": "auth-forgot.jpg"},
@@ -149,7 +149,7 @@ BRAND_ASSETS = [
     {"source": "Poster/312fe99b8a4b3fe968719e225ba5bc5c.jpg", "filename": "room-bedroom.jpg"},
     {"source": "Poster/f2fea7f0553a50921855e7a2dba73127.jpg", "filename": "room-gaming.jpg"},
     {"source": "Poster/47d73b831cd965dc232d3f13debea190.jpg", "filename": "room-living.jpg"},
-    {"source": "Poster/52f1076fec30c399c0abc37784376d41.jpg", "filename": "coming-soon-tees.jpg"},
+    {"source": "Hero/bg/coming-soon-tees.png", "filename": "coming-soon-tees.png"},
     {"source": "Poster/37bc11c534e513292dc1a94147c4735f.jpg", "filename": "coming-soon-hoodies.jpg"},
     {"source": "Keychain/WhatsApp Image 2026-07-31 at 7.16.20 AM.jpeg", "filename": "coming-soon-accessories.jpeg"},
 ]
@@ -208,7 +208,7 @@ def copy_all_assets() -> None:
 
 
 def default_settings() -> dict:
-    hero = upload_url("hero-background.png")
+    hero = upload_url("hero-background.png") + "?v=20260803"
     return {
         "logo_url": "",
         "hero_background_url": hero,

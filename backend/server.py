@@ -21,7 +21,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from mongo_client import create_motor_client, normalize_mongo_url
-from pydantic import BaseModel, Field, EmailStr, ConfigDict
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
 from starlette.middleware.cors import CORSMiddleware
 from seed_data import (
     CATEGORIES,
@@ -259,7 +259,8 @@ class ProductInput(BaseModel):
     description: str = ""
     price: float
     discount_percent: float = 0
-    stock_quantity: int = 10
+    stock_quantity: int = Field(default=10, ge=0)
+    status: Literal["ACTIVE", "SOLD_OUT", "COMING_SOON"] = "ACTIVE"
     images: List[str] = []
     lifestyle_image: Optional[str] = None
     material: str = "Premium 250gsm matte paper"
@@ -271,6 +272,33 @@ class ProductInput(BaseModel):
     is_new: bool = True
     is_limited: bool = False
     visibility: Literal["draft", "published"] = "published"
+
+    @field_validator("stock_quantity", mode="before")
+    @classmethod
+    def coerce_stock(cls, v):
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            raise ValueError("Stock quantity is required")
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("Stock quantity must be a whole number")
+        if n < 0:
+            raise ValueError("Stock quantity cannot be negative")
+        return n
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def coerce_status(cls, v):
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            return "ACTIVE"
+        s = str(v).strip().upper().replace(" ", "_")
+        if s not in ("ACTIVE", "SOLD_OUT", "COMING_SOON"):
+            raise ValueError("Status must be ACTIVE, SOLD_OUT, or COMING_SOON")
+        return s
+
+
+class ProductStatusInput(BaseModel):
+    status: Literal["ACTIVE", "SOLD_OUT", "COMING_SOON"]
 
 
 class CartItemInput(BaseModel):
@@ -290,7 +318,7 @@ class CheckoutInput(BaseModel):
 
 class SubmitPaymentInput(BaseModel):
     transaction_id: str = Field(min_length=6, max_length=64)
-    payment_screenshot_url: Optional[str] = None
+    payment_screenshot_url: str = Field(min_length=1)
 
 
 class UpdateOrderStatusInput(BaseModel):
@@ -299,8 +327,8 @@ class UpdateOrderStatusInput(BaseModel):
 
 
 class PaymentDecisionInput(BaseModel):
-    note: Optional[str] = ""
     note: Optional[str] = None
+    delivery_date: Optional[str] = None  # required when approving
 
 
 class SetDeliveryDateInput(BaseModel):
@@ -341,6 +369,16 @@ class TestimonialInput(BaseModel):
     location: Optional[str] = ""
     photo_url: Optional[str] = ""
     rating: int = 5
+    title: Optional[str] = ""
+    hidden: bool = False
+
+
+class ReviewInput(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    title: str = Field(min_length=2, max_length=120)
+    quote: str = Field(min_length=10, max_length=2000)
+    photo_url: Optional[str] = ""
+    product_id: Optional[str] = None
 
 
 class GalleryItemInput(BaseModel):
@@ -362,8 +400,10 @@ class DiscountInput(BaseModel):
     is_active: bool = True
 
 
+# Canonical lifecycle. packed/out_for_delivery kept for legacy orders only.
 ORDER_FLOW = ["placed", "payment_under_validation", "approved",
               "preparing", "packed", "out_for_delivery", "delivered"]
+ADMIN_ADVANCE_FLOW = ["preparing", "delivered"]
 
 
 # ─── OTP Endpoints ──────────────────────────────────────────────────────────
@@ -659,12 +699,33 @@ async def delete_category(cat_id: str, _: dict = Depends(require_admin)):
 
 
 # ─── Products ───────────────────────────────────────────────────────────────
+def _normalize_product_status(p: dict) -> str:
+    s = str(p.get("status") or "ACTIVE").strip().upper().replace(" ", "_")
+    return s if s in ("ACTIVE", "SOLD_OUT", "COMING_SOON") else "ACTIVE"
+
+
+def _assert_product_purchasable(product: dict) -> None:
+    status = _normalize_product_status(product)
+    if status == "SOLD_OUT":
+        raise HTTPException(400, "Sold out")
+    if status == "COMING_SOON":
+        raise HTTPException(400, "Coming soon")
+    stock = int(product.get("stock_quantity") or 0)
+    if stock < 1:
+        raise HTTPException(400, "Out of stock")
+
+
 def _compute_price(p: dict) -> dict:
     disc = float(p.get("discount_percent") or 0)
     price = float(p["price"])
     final = round(price * (1 - disc / 100), 2) if disc else price
     p["final_price"] = final
     p["has_discount"] = disc > 0
+    p["status"] = _normalize_product_status(p)
+    try:
+        p["stock_quantity"] = max(0, int(p.get("stock_quantity") or 0))
+    except (TypeError, ValueError):
+        p["stock_quantity"] = 0
     return p
 
 
@@ -728,6 +789,19 @@ async def update_product(pid: str, inp: ProductInput, admin: dict = Depends(requ
     if existing.get("stock_quantity", 0) <= 0 and patch.get("stock_quantity", 0) > 0:
         asyncio.create_task(_fire_restock_alerts(pid))
     await _log(admin, "product_updated", "product", pid, existing.get("name"), patch.get("name", existing.get("name")))
+    return _compute_price(strip_id(await db.products.find_one({"id": pid})))
+
+
+@api.patch("/admin/products/{pid}/status")
+async def update_product_status(pid: str, inp: ProductStatusInput, admin: dict = Depends(require_admin)):
+    existing = await db.products.find_one({"id": pid})
+    if not existing:
+        raise HTTPException(404, "Not found")
+    await db.products.update_one(
+        {"id": pid},
+        {"$set": {"status": inp.status, "updated_at": now_iso()}},
+    )
+    await _log(admin, "product_status_change", "product", pid, existing.get("status", "ACTIVE"), inp.status)
     return _compute_price(strip_id(await db.products.find_one({"id": pid})))
 
 
@@ -817,16 +891,20 @@ async def add_to_cart(inp: CartItemInput, user: dict = Depends(get_current_user)
     product = await db.products.find_one({"id": inp.product_id, "visibility": "published"})
     if not product:
         raise HTTPException(404, "Product not found")
-    if int(product.get("stock_quantity") or 0) < 1:
-        raise HTTPException(400, "Out of stock")
+    _assert_product_purchasable(product)
+    stock = int(product.get("stock_quantity") or 0)
+    qty = max(1, int(inp.quantity or 1))
     existing = await db.carts.find_one({"user_id": user["id"], "product_id": inp.product_id})
+    current_qty = int(existing["quantity"]) if existing else 0
+    if current_qty + qty > stock:
+        raise HTTPException(400, f"Only {stock} in stock")
     if existing:
         await db.carts.update_one({"_id": existing["_id"]},
-                                  {"$inc": {"quantity": inp.quantity},
+                                  {"$inc": {"quantity": qty},
                                    "$set": {"updated_at": now_iso()}})
     else:
         await db.carts.insert_one({"id": new_id(), "user_id": user["id"],
-                                   "product_id": inp.product_id, "quantity": inp.quantity,
+                                   "product_id": inp.product_id, "quantity": qty,
                                    "updated_at": now_iso()})
     return await _fetch_cart(user["id"])
 
@@ -836,8 +914,16 @@ async def update_cart(product_id: str, inp: CartItemInput, user: dict = Depends(
     if inp.quantity <= 0:
         await db.carts.delete_one({"user_id": user["id"], "product_id": product_id})
     else:
+        product = await db.products.find_one({"id": product_id, "visibility": "published"})
+        if not product:
+            raise HTTPException(404, "Product not found")
+        _assert_product_purchasable(product)
+        stock = int(product.get("stock_quantity") or 0)
+        if inp.quantity > stock:
+            raise HTTPException(400, "Out of stock" if stock < 1 else f"Only {stock} in stock")
         await db.carts.update_one({"user_id": user["id"], "product_id": product_id},
-                                  {"$set": {"quantity": inp.quantity, "updated_at": now_iso()}})
+                                  {"$set": {"quantity": inp.quantity, "updated_at": now_iso()}},
+                                  upsert=True)
     return await _fetch_cart(user["id"])
 
 
@@ -886,9 +972,14 @@ async def _next_order_number() -> str:
 async def checkout(inp: CheckoutInput, user: dict = Depends(get_current_user)):
     cart = await _fetch_cart(user["id"])
     if not cart["items"]: raise HTTPException(400, "Cart is empty")
-    # Stock check before creating order
+    # Stock / status check before creating order
     for it in cart["items"]:
         p = it["product"]
+        status = _normalize_product_status(p)
+        if status == "SOLD_OUT":
+            raise HTTPException(400, f"{p.get('name', 'Item')} is sold out")
+        if status == "COMING_SOON":
+            raise HTTPException(400, f"{p.get('name', 'Item')} is coming soon")
         stock = int(p.get("stock_quantity") or 0)
         if stock < it["quantity"]:
             raise HTTPException(400, f"Insufficient stock for {p.get('name', 'item')}")
@@ -959,21 +1050,25 @@ async def submit_payment(order_id: str, inp: SubmitPaymentInput, user: dict = De
     txn = re.sub(r"[^A-Za-z0-9\-]", "", inp.transaction_id.strip())[:64]
     if len(txn) < 6:
         raise HTTPException(400, "Enter a valid transaction ID")
+    screenshot = (inp.payment_screenshot_url or order.get("payment_screenshot_url") or "").strip()
+    if not screenshot:
+        raise HTTPException(400, "Payment screenshot is required")
+    if not screenshot.startswith("/uploads/"):
+        raise HTTPException(400, "Invalid payment screenshot URL")
+    paid_at = now_iso()
     patch = {
         "transaction_id": txn,
+        "payment_screenshot_url": screenshot,
         "status": "payment_under_validation",
         "payment_status": "under_validation",
-        "updated_at": now_iso(),
+        "payment_submitted_at": paid_at,
+        "updated_at": paid_at,
     }
-    if inp.payment_screenshot_url:
-        if not str(inp.payment_screenshot_url).startswith("/uploads/"):
-            raise HTTPException(400, "Invalid payment screenshot URL")
-        patch["payment_screenshot_url"] = inp.payment_screenshot_url
     await db.orders.update_one({"id": order_id}, {
         "$set": patch,
         "$push": {"timeline": {"status": "payment_under_validation",
-                                "at": now_iso(),
-                                "note": f"Transaction {txn} submitted"}},
+                                "at": paid_at,
+                                "note": f"Payment submitted · Transaction {txn}"}},
     })
     return strip_id(await db.orders.find_one({"id": order_id}))
 
@@ -996,7 +1091,7 @@ async def get_order(order_id: str, user: dict = Depends(get_current_user)):
 async def cancel_order(order_id: str, user: dict = Depends(get_current_user)):
     order = await db.orders.find_one({"id": order_id, "user_id": user["id"]})
     if not order: raise HTTPException(404, "Order not found")
-    if order["status"] not in ("placed", "payment_under_validation", "approved"):
+    if order["status"] not in ("placed", "payment_under_validation"):
         raise HTTPException(400, "Order cannot be cancelled at this stage")
     await db.orders.update_one({"id": order_id}, {
         "$set": {"status": "cancelled", "updated_at": now_iso(), "cancelled_at": now_iso()},
@@ -1013,7 +1108,7 @@ async def cancel_order(order_id: str, user: dict = Depends(get_current_user)):
 async def admin_list_orders(_: dict = Depends(require_admin),
                             status: Optional[str] = None,
                             q: Optional[str] = None):
-    query: dict = {}
+    query: dict = {"is_deleted": {"$ne": True}}
     if status: query["status"] = status
     if q:
         query["$or"] = [
@@ -1023,6 +1118,20 @@ async def admin_list_orders(_: dict = Depends(require_admin),
             {"transaction_id": {"$regex": q, "$options": "i"}},
         ]
     return await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+
+
+@api.delete("/admin/orders/{order_id}")
+async def admin_soft_delete_order(order_id: str, admin: dict = Depends(require_admin)):
+    order = await db.orders.find_one({"id": order_id})
+    if not order:
+        raise HTTPException(404, "Order not found")
+    if order.get("is_deleted"):
+        return {"ok": True}
+    await db.orders.update_one({"id": order_id}, {
+        "$set": {"is_deleted": True, "deleted_at": now_iso(), "updated_at": now_iso()},
+    })
+    await _log(admin, "order_soft_deleted", "order", order_id, order.get("order_number"), None)
+    return {"ok": True}
 
 
 @api.put("/admin/orders/{order_id}/status")
@@ -1072,24 +1181,29 @@ async def admin_approve_payment(order_id: str, inp: PaymentDecisionInput,
         raise HTTPException(404, "Order not found")
     if order["status"] not in ("placed", "payment_under_validation"):
         raise HTTPException(400, "Order is not awaiting payment verification")
+    delivery_date = (inp.delivery_date or "").strip()
+    if not delivery_date:
+        raise HTTPException(400, "Expected delivery date is required to approve payment")
     now = now_iso()
     await db.orders.update_one({"id": order_id}, {
         "$set": {
-            "status": "approved",
+            "status": "preparing",
             "payment_status": "verified",
+            "delivery_date": delivery_date,
+            "payment_verified_at": now,
             "updated_at": now,
         },
         "$push": {"timeline": {"$each": [
             {
-                "status": "payment_under_validation",
+                "status": "approved",
                 "at": now,
-                "note": inp.note or "Payment Approved",
+                "note": inp.note or "Payment verified. Your order is now being prepared.",
                 "by": admin["email"],
             },
             {
-                "status": "approved",
+                "status": "preparing",
                 "at": now,
-                "note": "Order Confirmed",
+                "note": f"Preparing order · Expected delivery {delivery_date[:10]}",
                 "by": admin["email"],
             },
         ]}},
@@ -1098,8 +1212,8 @@ async def admin_approve_payment(order_id: str, inp: PaymentDecisionInput,
     asyncio.create_task(email_service.send(
         order["customer_email"],
         f"Payment Approved — {order['order_number']}",
-        f"<p>Your payment for <b>{order['order_number']}</b> was approved. "
-        f"Your order is now <b>Order Confirmed</b>.</p>",
+        f"<p>Payment verified for <b>{order['order_number']}</b>.</p>"
+        f"<p>Your order is now being prepared. Expected delivery: <b>{delivery_date[:10]}</b>.</p>",
     ))
     return strip_id(await db.orders.find_one({"id": order_id}))
 
@@ -1112,7 +1226,7 @@ async def admin_reject_payment(order_id: str, inp: PaymentDecisionInput,
         raise HTTPException(404, "Order not found")
     if order["status"] not in ("placed", "payment_under_validation"):
         raise HTTPException(400, "Order is not awaiting payment verification")
-    reject_note = inp.note or "Payment Rejected — please resubmit a valid UPI transaction ID and screenshot."
+    reject_note = inp.note or "Payment could not be verified. Please contact support."
     await db.orders.update_one({"id": order_id}, {
         "$set": {
             "status": "placed",
@@ -1130,8 +1244,8 @@ async def admin_reject_payment(order_id: str, inp: PaymentDecisionInput,
     asyncio.create_task(email_service.send(
         order["customer_email"],
         f"Payment Rejected — {order['order_number']}",
-        f"<p>Payment for <b>{order['order_number']}</b> was rejected.</p>"
-        f"<p>{reject_note}</p><p>Please open your order and use <b>Retry Payment</b>.</p>",
+        f"<p>Payment for <b>{order['order_number']}</b> could not be verified.</p>"
+        f"<p>{reject_note}</p><p>Please open your order and use <b>Retry Payment</b>, or contact support.</p>",
     ))
     return strip_id(await db.orders.find_one({"id": order_id}))
 
@@ -1203,19 +1317,90 @@ async def _fire_restock_alerts(product_id: str):
 
 @api.get("/testimonials")
 async def list_testimonials():
-    return await db.testimonials.find({}, {"_id": 0}).sort("created_at", -1).to_list(50)
+    """Public reviews/testimonials — newest first, hidden excluded."""
+    return await db.testimonials.find(
+        {"hidden": {"$ne": True}}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+
+
+@api.get("/admin/testimonials")
+async def admin_list_testimonials(_: dict = Depends(require_admin)):
+    return await db.testimonials.find({}, {"_id": 0}).sort("created_at", -1).to_list(200)
 
 
 @api.post("/admin/testimonials")
 async def create_testimonial(inp: TestimonialInput, _: dict = Depends(require_admin)):
     doc = inp.model_dump()
-    doc.update({"id": new_id(), "created_at": now_iso()})
-    await db.testimonials.insert_one(doc); doc.pop("_id", None); return doc
+    doc.update({
+        "id": new_id(),
+        "created_at": now_iso(),
+        "verified_purchase": False,
+        "hidden": bool(doc.get("hidden")),
+    })
+    await db.testimonials.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+class ReviewVisibilityInput(BaseModel):
+    hidden: bool = True
+
+
+@api.put("/admin/testimonials/{tid}/visibility")
+async def set_testimonial_visibility(tid: str, inp: ReviewVisibilityInput, _: dict = Depends(require_admin)):
+    result = await db.testimonials.update_one(
+        {"id": tid}, {"$set": {"hidden": inp.hidden, "updated_at": now_iso()}}
+    )
+    if result.matched_count == 0:
+        raise HTTPException(404, "Review not found")
+    return strip_id(await db.testimonials.find_one({"id": tid}))
 
 
 @api.delete("/admin/testimonials/{tid}")
 async def delete_testimonial(tid: str, _: dict = Depends(require_admin)):
-    await db.testimonials.delete_one({"id": tid}); return {"ok": True}
+    await db.testimonials.delete_one({"id": tid})
+    return {"ok": True}
+
+
+async def _user_has_purchase(user_id: str) -> bool:
+    """True if customer completed a real purchase (paid / delivered)."""
+    found = await db.orders.find_one({
+        "user_id": user_id,
+        "status": {"$ne": "cancelled"},
+        "$or": [
+            {"payment_status": "verified"},
+            {"status": {"$in": ["approved", "preparing", "packed", "out_for_delivery", "delivered"]}},
+        ],
+    }, {"_id": 1})
+    return found is not None
+
+
+@api.post("/reviews")
+async def create_review(inp: ReviewInput, user: dict = Depends(get_current_user)):
+    if user.get("role") == "admin":
+        raise HTTPException(400, "Admins cannot post customer reviews")
+    if not await _user_has_purchase(user["id"]):
+        raise HTTPException(403, "Only customers with a completed purchase can leave a review")
+    existing = await db.testimonials.find_one({"user_id": user["id"]})
+    if existing:
+        raise HTTPException(400, "You have already submitted a review")
+    doc = {
+        "id": new_id(),
+        "user_id": user["id"],
+        "name": user.get("name") or "Customer",
+        "title": inp.title.strip(),
+        "quote": inp.quote.strip(),
+        "location": "",
+        "photo_url": (inp.photo_url or "").strip(),
+        "rating": int(inp.rating),
+        "product_id": inp.product_id,
+        "verified_purchase": True,
+        "hidden": False,
+        "created_at": now_iso(),
+    }
+    await db.testimonials.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
 
 
 @api.get("/gallery")
@@ -1325,7 +1510,7 @@ async def update_settings(inp: SettingsUpdate, admin: dict = Depends(require_adm
 # ─── Admin: Analytics ───────────────────────────────────────────────────────
 @api.get("/admin/analytics")
 async def admin_analytics(_: dict = Depends(require_admin)):
-    orders = await db.orders.find({}, {"_id": 0}).to_list(2000)
+    orders = await db.orders.find({"is_deleted": {"$ne": True}}, {"_id": 0}).to_list(2000)
     total_revenue = sum(o.get("total", 0) for o in orders if o.get("status") == "delivered")
     all_revenue = sum(o.get("total", 0) for o in orders if o.get("status") != "cancelled")
     pending = sum(1 for o in orders if o.get("status") in ("placed", "payment_under_validation"))
@@ -1414,6 +1599,7 @@ async def _seed_products_and_assets():
             "description": p["description"], "category_slug": p["category_slug"],
             "price": p["price"], "discount_percent": p.get("discount_percent", 0),
             "stock_quantity": p.get("stock_quantity", 25),
+            "status": p.get("status", "ACTIVE"),
             "images": [url], "lifestyle_image": url,
             "material": p.get("material", "Premium 250gsm matte paper"),
             "size": p.get("size", "A3 (11.7 x 16.5 in)"),
@@ -1519,27 +1705,9 @@ async def _release_expired_reservations():
 
 async def seed_if_empty():
     await _ensure_admin_account()
-
-    demo_email = "demo@paperandloop.com"
-    if APP_ENV != "production" and not await db.users.find_one({"email": demo_email}):
-        await db.users.insert_one({
-            "id": new_id(), "email": demo_email,
-            "password_hash": hash_pw("demo1234"),
-            "name": "Demo Customer", "phone": "9999999999",
-            "role": "customer", "is_blocked": False,
-            "address_line1": "12, MG Road", "address_line2": "Flat 3B",
-            "city": "Chennai", "state": "Tamil Nadu", "pincode": "600001",
-            "email_verified": True,
-            "token_version": 0,
-            "created_at": now_iso(),
-        })
-
     await _get_settings()
 
-    if await db.testimonials.count_documents({}) == 0:
-        for t in TESTIMONIALS:
-            await db.testimonials.insert_one({"id": new_id(), **t, "created_at": now_iso()})
-
+    # Do not seed demo users, demo testimonials, or demo orders.
     if await db.products.count_documents({}) == 0:
         await _seed_products_and_assets()
     else:
@@ -1564,6 +1732,11 @@ async def seed_if_empty():
 
     await _ensure_brand_assets()
     await _migrate_upload_urls()
+    # Backfill product status for older catalog rows
+    await db.products.update_many(
+        {"$or": [{"status": {"$exists": False}}, {"status": None}, {"status": ""}]},
+        {"$set": {"status": "ACTIVE"}},
+    )
 
 
 async def _migrate_upload_urls():
@@ -1575,26 +1748,35 @@ async def _migrate_upload_urls():
 
 
 async def _ensure_brand_assets():
-    """Sync hero image from Images/Hero and strip legacy Emergent branding from settings."""
-    hero_src = ROOT_DIR.parent / "Images" / "Hero" / "hero-background.png"
+    """Sync hero + tees from Images/Hero/bg and force canonical URLs in settings."""
+    hero_src = ROOT_DIR.parent / "Images" / "Hero" / "bg" / "hero-background.png"
+    tees_src = ROOT_DIR.parent / "Images" / "Hero" / "bg" / "coming-soon-tees.png"
     if not hero_src.exists():
         return
     try:
-        copy_asset("Hero/hero-background.png", "hero-background.png")
+        copy_asset("Hero/bg/hero-background.png", "hero-background.png")
+        if tees_src.exists():
+            copy_asset("Hero/bg/coming-soon-tees.png", "coming-soon-tees.png")
     except FileNotFoundError:
         return
     s = await db.settings.find_one({"key": "site"}) or {}
     patch: dict = {}
-    hero = upload_url("hero-background.png")
-    if s.get("hero_background_url") != hero:
+    hero = upload_url("hero-background.png") + "?v=20260803"
+    defaults = default_settings()
+    legacy_hero = (s.get("hero_background_url") or "").split("?")[0]
+    if (
+        s.get("hero_background_url") != hero
+        or re.search(r"unsplash|pexels|emergent", s.get("hero_background_url") or "", re.I)
+        or legacy_hero.endswith("hero-background.png") and s.get("hero_background_url") != hero
+    ):
         patch["hero_background_url"] = hero
-        patch["hero_images"] = default_settings()["hero_images"]
+        patch["hero_images"] = defaults["hero_images"]
     logo = s.get("logo_url") or ""
     if logo and re.search(r"emergent|unsplash|pexels", logo, re.I):
         patch["logo_url"] = ""
     ann = s.get("announcement") or ""
     if "Tokyo Nights" in ann or not ann:
-        patch["announcement"] = default_settings()["announcement"]
+        patch["announcement"] = defaults["announcement"]
     if patch:
         await db.settings.update_one({"key": "site"}, {"$set": patch}, upsert=True)
         log.info("Updated brand assets: %s", list(patch.keys()))

@@ -11,7 +11,7 @@ const nav = [
   { to: "/admin/discounts", label: "Discounts", icon: Percent },
   { to: "/admin/customers", label: "Customers", icon: Users },
   { to: "/admin/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/admin/testimonials", label: "Content", icon: Quote },
+  { to: "/admin/testimonials", label: "Reviews", icon: Quote },
   { to: "/admin/activity", label: "Activity", icon: ScrollText },
   { to: "/admin/settings", label: "Settings", icon: Settings },
 ];

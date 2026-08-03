@@ -25,9 +25,9 @@ const Confirmation = () => {
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
           <div className="text-[11px] uppercase tracking-widest text-neutral-500 mt-6">Step 3 of 3 · Confirmation</div>
-          <h1 className="font-display uppercase text-editorial mt-2">Payment Verification Pending.</h1>
+          <h1 className="font-display uppercase text-editorial mt-2">Payment submitted.</h1>
           <p className="text-neutral-600 mt-3 max-w-md mx-auto" data-testid="confirmation-status">
-            Your payment is awaiting admin verification. This is not approved yet. You'll see Payment Approved → Order Confirmed once verified.
+            Payment submitted successfully. Waiting for verification.
           </p>
 
           <div className="mt-8 border border-neutral-200 p-6 text-left">

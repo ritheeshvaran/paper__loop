@@ -53,11 +53,12 @@ const Payment = ({ settings }) => {
   const submit = async (e) => {
     e.preventDefault();
     if (txn.trim().length < 6) return toast.error("Enter a valid transaction ID");
+    if (!screenshotUrl) return toast.error("Payment screenshot is required");
     setSubmitting(true);
     try {
       await api.post(`/orders/${id}/submit-payment`, {
         transaction_id: txn.trim(),
-        payment_screenshot_url: screenshotUrl || undefined,
+        payment_screenshot_url: screenshotUrl,
       });
       nav(`/checkout/confirmation/${id}`);
     } catch (err) {
@@ -116,21 +117,24 @@ const Payment = ({ settings }) => {
               className="w-full mt-1 border-b border-neutral-300 focus:border-black bg-transparent py-2 font-mono focus:outline-none"
             />
 
-            <label className="mt-6 block text-[10px] uppercase tracking-widest text-neutral-500">Payment screenshot (optional)</label>
+            <label className="mt-6 block text-[10px] uppercase tracking-widest text-neutral-500">Payment screenshot *</label>
             <label className="mt-2 flex items-center justify-center gap-2 border border-dashed border-neutral-300 px-3 py-6 cursor-pointer hover:border-black text-sm">
               <Upload className="w-4 h-4" />
               {uploading ? "Uploading…" : screenshotUrl ? "Replace screenshot" : "Upload screenshot"}
-              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onUpload} disabled={uploading} data-testid="payment-screenshot-input" />
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onUpload} disabled={uploading} data-testid="payment-screenshot-input" required={!screenshotUrl} />
             </label>
             {screenshotUrl && (
-              <img src={resolveMedia(screenshotUrl)} alt="Payment proof" className="mt-3 w-full max-h-40 object-contain border border-neutral-200" />
+              <img src={resolveMedia(screenshotUrl)} alt="Payment proof" className="mt-3 w-full max-h-40 object-contain border border-neutral-200" data-testid="payment-screenshot-preview" />
+            )}
+            {!screenshotUrl && (
+              <p className="text-xs text-red-600 mt-2" data-testid="screenshot-required-hint">Screenshot is required before submitting.</p>
             )}
 
             <p className="text-xs text-neutral-500 mt-3 flex gap-2">
               <CheckCircle2 className="w-4 h-4 text-[color:var(--pl-orange)] shrink-0" />
-              Submitting does not approve your order — admin verifies the UPI payment first.
+              Both screenshot and transaction ID are required. Admin verifies payment before your order is prepared.
             </p>
-            <button data-testid="submit-payment" disabled={submitting} className="pl-btn pl-btn-primary w-full mt-6">
+            <button data-testid="submit-payment" disabled={submitting || !screenshotUrl || txn.trim().length < 6} className="pl-btn pl-btn-primary w-full mt-6 disabled:opacity-50 disabled:cursor-not-allowed">
               {submitting ? "Submitting…" : "Submit Payment"}
             </button>
           </form>

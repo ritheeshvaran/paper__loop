@@ -53,8 +53,13 @@ export const CartProvider = ({ children }) => {
   };
 
   const updateQty = async (product_id, quantity) => {
-    const { data } = await api.put(`/cart/${product_id}`, { product_id, quantity });
-    setCart(data);
+    try {
+      const { data } = await api.put(`/cart/${product_id}`, { product_id, quantity });
+      setCart(data);
+    } catch (e) {
+      toast.error(e.response?.data?.detail || "Couldn't update quantity");
+      refresh();
+    }
   };
 
   const removeItem = async (product_id) => {

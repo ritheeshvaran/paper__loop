@@ -11,7 +11,7 @@ const DEST = path.join(FRONTEND, "public", "uploads");
 
 const CATALOG = [
   "hero-background.png",
-  "hero-background.jpg",
+  "coming-soon-tees.png",
   "auth-login.jpg",
   "auth-register.jpg",
   "auth-forgot.jpg",
@@ -19,7 +19,6 @@ const CATALOG = [
   "room-bedroom.jpg",
   "room-gaming.jpg",
   "room-living.jpg",
-  "coming-soon-tees.jpg",
   "coming-soon-hoodies.jpg",
   "coming-soon-accessories.jpeg",
   "spider-man-iron-spider.jpg",
@@ -37,6 +36,7 @@ const CATALOG = [
 
 const SOURCES = [
   path.join(REPO, "backend", "uploads"),
+  path.join(REPO, "Images", "Hero", "bg"),
   path.join(REPO, "Images", "Hero"),
   path.join(REPO, "Images", "Poster"),
   path.join(REPO, "Images", "Keychain"),
@@ -48,8 +48,14 @@ function findSource(name) {
     if (fs.existsSync(direct)) return direct;
   }
   if (name === "hero-background.png") {
-    const hero = path.join(REPO, "Images", "Hero", "hero-background.png");
+    const hero = path.join(REPO, "Images", "Hero", "bg", "hero-background.png");
     if (fs.existsSync(hero)) return hero;
+    const legacy = path.join(REPO, "Images", "Hero", "hero-background.png");
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  if (name === "coming-soon-tees.png") {
+    const tees = path.join(REPO, "Images", "Hero", "bg", "coming-soon-tees.png");
+    if (fs.existsSync(tees)) return tees;
   }
   if (name === "sweet-bear-unicorn-keychain.jpeg" || name === "coming-soon-accessories.jpeg") {
     for (const dir of [path.join(REPO, "Images", "Keychain")]) {

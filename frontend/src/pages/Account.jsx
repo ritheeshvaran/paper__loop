@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/lists";
-import { formatDate, statusLabel, statusColor } from "@/lib/format";
+import { formatDate, statusLabel, statusColor, orderDisplayKey } from "@/lib/format";
 import { toast } from "sonner";
 
 const Account = () => {
@@ -11,8 +11,20 @@ const Account = () => {
   const [form, setForm] = useState(user || {});
   const [saving, setSaving] = useState(false);
   const [orders, setOrders] = useState([]);
+  const [canReview, setCanReview] = useState(false);
+  const [review, setReview] = useState({ rating: 5, title: "", quote: "", photo_url: "" });
+  const [reviewBusy, setReviewBusy] = useState(false);
   useEffect(() => { if (user) setForm(user); }, [user]);
-  useEffect(() => { api.get("/orders").then((r) => setOrders(asArray(r.data).slice(0, 3))).catch(() => setOrders([])); }, []);
+  useEffect(() => {
+    api.get("/orders").then((r) => {
+      const list = asArray(r.data);
+      setOrders(list.slice(0, 3));
+      setCanReview(list.some((o) =>
+        o.payment_status === "verified"
+        || ["approved", "preparing", "packed", "out_for_delivery", "delivered"].includes(o.status)
+      ));
+    }).catch(() => setOrders([]));
+  }, []);
 
   const save = async () => {
     setSaving(true);
@@ -78,22 +90,85 @@ const Account = () => {
               <div className="border border-neutral-200 p-6 text-sm text-neutral-500">No orders yet. <Link to="/collections" className="underline">Start shopping</Link></div>
             ) : (
               <ul className="space-y-3">
-                {orders.map((o) => (
+                {orders.map((o) => {
+                  const key = orderDisplayKey(o);
+                  return (
                   <li key={o.id}>
                     <Link to={`/account/orders/${o.id}`} className="block border border-neutral-200 p-4 hover:border-black transition-colors">
                       <div className="flex items-center justify-between">
                         <span className="font-mono text-xs">{o.order_number}</span>
-                        <span className={`text-[10px] uppercase tracking-widest px-2 py-0.5 ${statusColor(o.status)}`}>{statusLabel(o.status)}</span>
+                        <span className={`text-[10px] uppercase tracking-widest px-2 py-0.5 ${statusColor(key)}`}>{statusLabel(key)}</span>
                       </div>
                       <div className="mt-2 text-sm">{o.items.length} item{o.items.length > 1 ? "s" : ""} · {formatDate(o.created_at)}</div>
                     </Link>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
             <Link to="/account/wishlist" data-testid="link-wishlist" className="mt-6 block border border-neutral-200 p-4 text-sm hover:border-black">
               Wishlist →
             </Link>
+
+            {canReview && user?.role !== "admin" && (
+              <form
+                data-testid="review-form"
+                className="mt-6 border border-neutral-200 p-4 space-y-3"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  setReviewBusy(true);
+                  try {
+                    await api.post("/reviews", review);
+                    toast.success("Review submitted — thank you!");
+                    setReview({ rating: 5, title: "", quote: "", photo_url: "" });
+                    setCanReview(false);
+                  } catch (err) {
+                    toast.error(err.response?.data?.detail || "Couldn't submit review");
+                  } finally {
+                    setReviewBusy(false);
+                  }
+                }}
+              >
+                <div className="font-display uppercase text-lg">Write a review</div>
+                <p className="text-xs text-neutral-500">Verified purchase required. Newest reviews appear on the homepage.</p>
+                <label className="text-[10px] uppercase tracking-widest text-neutral-500">Rating</label>
+                <select
+                  data-testid="review-rating"
+                  value={review.rating}
+                  onChange={(e) => setReview({ ...review, rating: Number(e.target.value) })}
+                  className="w-full border-b border-neutral-300 py-2 bg-transparent focus:outline-none"
+                >
+                  {[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{n} stars</option>)}
+                </select>
+                <input
+                  data-testid="review-title"
+                  required
+                  placeholder="Title"
+                  value={review.title}
+                  onChange={(e) => setReview({ ...review, title: e.target.value })}
+                  className="w-full border-b border-neutral-300 py-2 bg-transparent focus:outline-none"
+                />
+                <textarea
+                  data-testid="review-body"
+                  required
+                  rows={3}
+                  placeholder="Your review"
+                  value={review.quote}
+                  onChange={(e) => setReview({ ...review, quote: e.target.value })}
+                  className="w-full border-b border-neutral-300 py-2 bg-transparent focus:outline-none"
+                />
+                <input
+                  data-testid="review-image"
+                  placeholder="Image URL (optional)"
+                  value={review.photo_url}
+                  onChange={(e) => setReview({ ...review, photo_url: e.target.value })}
+                  className="w-full border-b border-neutral-300 py-2 bg-transparent focus:outline-none"
+                />
+                <button disabled={reviewBusy} className="pl-btn pl-btn-primary w-full" data-testid="review-submit">
+                  {reviewBusy ? "Submitting…" : "Submit Review"}
+                </button>
+              </form>
+            )}
           </div>
         </div>
       </div>
