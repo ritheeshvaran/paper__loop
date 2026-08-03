@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/lists";
 import { fetchProducts } from "@/lib/products";
+import { resolveMedia } from "@/lib/media";
 import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { motion } from "framer-motion";
@@ -37,7 +38,7 @@ const Collections = () => {
       {/* Banner */}
       <div className="relative bg-[color:var(--pl-black)] text-white overflow-hidden">
         {active?.banner_image_url && (
-          <img src={active.banner_image_url} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
+          <img src={resolveMedia(active.banner_image_url)} alt="" className="absolute inset-0 w-full h-full object-cover opacity-40" />
         )}
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 to-black/90" />
         <div className="pl-container relative z-10 py-24 md:py-32">

@@ -264,12 +264,17 @@ class TestUpload:
         r = requests.post(f"{API}/admin/upload", files=files, headers=headers)
         assert r.status_code == 200, r.text
         url = r.json()["url"]
-        assert url.startswith("/uploads/")
-        # accessible via GET
-        full = BASE_URL + url
-        g = requests.get(full)
-        assert g.status_code == 200
-        assert g.content == png
+        assert url.startswith("/uploads/") or url.startswith("https://"), url
+        # accessible via GET when local; R2 URLs are public CDN
+        if url.startswith("/uploads/"):
+            full = BASE_URL + url
+            g = requests.get(full)
+            assert g.status_code == 200
+            assert g.content == png
+        else:
+            g = requests.get(url, timeout=30)
+            assert g.status_code == 200
+            assert len(g.content) > 0
 
     def test_upload_rejects_non_image(self, s, admin_token):
         files = {"file": ("t.txt", io.BytesIO(b"hello"), "text/plain")}

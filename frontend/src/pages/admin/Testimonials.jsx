@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, API } from "@/lib/api";
 import { toast } from "sonner";
 import { Eye, EyeOff, Trash2, Star } from "lucide-react";
 import { resolveMedia } from "@/lib/media";
@@ -103,6 +103,40 @@ const Testimonials = () => {
         <h1 className="font-display uppercase text-3xl mt-1 mb-4">Gallery</h1>
         <form onSubmit={addG} className="bg-neutral-900 border border-neutral-800 p-5 space-y-3 mb-4">
           <input required placeholder="Image URL" value={g.image_url} onChange={(e) => setG({ ...g, image_url: e.target.value })} className="w-full bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm" />
+          <div className="flex items-center gap-2">
+            <label className="pl-btn pl-btn-ghost-dark !py-1.5 !px-3 !text-[10px] cursor-pointer">
+              Upload image
+              <input
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const fd = new FormData();
+                  fd.append("file", file);
+                  try {
+                    const token = localStorage.getItem("pl_token");
+                    const res = await fetch(`${API}/admin/upload?folder=gallery`, {
+                      method: "POST",
+                      headers: { Authorization: `Bearer ${token}` },
+                      body: fd,
+                    });
+                    if (!res.ok) throw new Error("Upload failed");
+                    const { url } = await res.json();
+                    setG((prev) => ({ ...prev, image_url: url }));
+                    toast.success("Uploaded");
+                  } catch {
+                    toast.error("Upload failed");
+                  }
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {g.image_url && (
+              <img src={resolveMedia(g.image_url)} alt="" className="h-10 w-10 object-cover border border-neutral-700" />
+            )}
+          </div>
           <input placeholder="Caption" value={g.caption} onChange={(e) => setG({ ...g, caption: e.target.value })} className="w-full bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm" />
           <input placeholder="Link URL (optional)" value={g.link_url} onChange={(e) => setG({ ...g, link_url: e.target.value })} className="w-full bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm" />
           <input type="number" placeholder="Sort order" value={g.sort_order} onChange={(e) => setG({ ...g, sort_order: Number(e.target.value) })} className="w-32 bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm" />

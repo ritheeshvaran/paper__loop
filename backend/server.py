@@ -690,10 +690,12 @@ async def update_category(cat_id: str, inp: CategoryInput, _: dict = Depends(req
 
 @api.delete("/admin/categories/{cat_id}")
 async def delete_category(cat_id: str, _: dict = Depends(require_admin)):
+    from object_storage import delete_object_by_url
     cat = await db.categories.find_one({"id": cat_id})
     if not cat: raise HTTPException(404, "Category not found")
     cnt = await db.products.count_documents({"category_slug": cat["slug"]})
     if cnt > 0: raise HTTPException(400, "Reassign products before deleting")
+    delete_object_by_url(cat.get("banner_image_url") or "")
     await db.categories.delete_one({"id": cat_id})
     return {"ok": True}
 
@@ -807,41 +809,76 @@ async def update_product_status(pid: str, inp: ProductStatusInput, admin: dict =
 
 @api.delete("/admin/products/{pid}")
 async def delete_product(pid: str, admin: dict = Depends(require_admin)):
+    from object_storage import delete_urls
     p = await db.products.find_one({"id": pid})
+    if p:
+        urls = list(p.get("images") or [])
+        if p.get("lifestyle_image"):
+            urls.append(p["lifestyle_image"])
+        delete_urls(urls)
+        await _log(admin, "product_deleted", "product", pid, p.get("name"), None)
     await db.products.delete_one({"id": pid})
-    if p: await _log(admin, "product_deleted", "product", pid, p.get("name"), None)
     return {"ok": True}
 
 
 # ─── Image upload (admin + payment proofs) ──────────────────────────────────
-async def _save_validated_image(file: UploadFile, *, subdir: str = "") -> str:
+async def _save_validated_image(file: UploadFile, *, subdir: str = "products") -> str:
+    """Validate image and store in Supabase Storage (or local disk in development).
+
+    Returns a permanent public HTTPS URL when Supabase is configured.
+    Never relies on Render's ephemeral filesystem in production.
+    """
+    from object_storage import normalize_folder, put_bytes, unique_object_key
+
     content = await file.read()
     if len(content) > 8 * 1024 * 1024:
         raise HTTPException(400, "File too large (max 8MB)")
     ext = detect_image(content)
     if not ext:
         raise HTTPException(400, "Only JPEG, PNG, WebP, or GIF images are allowed")
-    # Reject SVG / mismatched declared types (magic bytes are source of truth)
     if file.content_type and file.content_type not in ALLOWED_IMAGE_MIME and file.content_type != "application/octet-stream":
         if not file.content_type.startswith("image/"):
             raise HTTPException(400, "Only image uploads are allowed")
-    folder = UPLOAD_DIR / subdir if subdir else UPLOAD_DIR
-    folder.mkdir(parents=True, exist_ok=True)
-    fname = f"{new_id()}.{ext}"
-    dest = folder / fname
-    # Prevent path traversal — fname is UUID-generated only
-    if ".." in fname or "/" in fname or "\\" in fname:
-        raise HTTPException(400, "Invalid filename")
-    with dest.open("wb") as f:
-        f.write(content)
-    rel = f"{subdir}/{fname}" if subdir else fname
-    return f"/uploads/{rel}"
+
+    folder = normalize_folder(subdir or "products")
+    key = unique_object_key(ext, folder=folder)
+    try:
+        return put_bytes(content, key)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        log.exception("Image upload failed")
+        raise HTTPException(500, f"Upload failed: {e}")
 
 
 @api.post("/admin/upload")
-async def upload_file(file: UploadFile = File(...), _: dict = Depends(require_admin)):
-    url = await _save_validated_image(file)
+async def upload_file(
+    file: UploadFile = File(...),
+    folder: str = "products",
+    _: dict = Depends(require_admin),
+):
+    """Upload media to Supabase. Optional folder: products|gallery|hero|categories|payments|testimonials|misc."""
+    url = await _save_validated_image(file, subdir=folder)
     return {"url": url}
+
+
+@api.post("/admin/migrate-media-to-supabase")
+async def admin_migrate_media_to_supabase(_: dict = Depends(require_admin)):
+    """One-shot: upload local uploads/ (if present) + rewrite Mongo /uploads/ refs to Supabase public URLs.
+
+    Safe to re-run (stable keys + upsert). Uses SUPABASE_* env already configured on the host.
+    """
+    from object_storage import storage_configured
+    from migrate_media_to_supabase import migrate
+
+    if not storage_configured():
+        raise HTTPException(
+            503,
+            "Supabase Storage is not configured on this host "
+            "(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET).",
+        )
+    report = await migrate(db)
+    return report
 
 
 @api.post("/orders/{order_id}/upload-payment-proof")
@@ -1053,7 +1090,8 @@ async def submit_payment(order_id: str, inp: SubmitPaymentInput, user: dict = De
     screenshot = (inp.payment_screenshot_url or order.get("payment_screenshot_url") or "").strip()
     if not screenshot:
         raise HTTPException(400, "Payment screenshot is required")
-    if not screenshot.startswith("/uploads/"):
+    from object_storage import is_allowed_media_url
+    if not is_allowed_media_url(screenshot):
         raise HTTPException(400, "Invalid payment screenshot URL")
     paid_at = now_iso()
     patch = {
@@ -1358,6 +1396,10 @@ async def set_testimonial_visibility(tid: str, inp: ReviewVisibilityInput, _: di
 
 @api.delete("/admin/testimonials/{tid}")
 async def delete_testimonial(tid: str, _: dict = Depends(require_admin)):
+    from object_storage import delete_object_by_url
+    t = await db.testimonials.find_one({"id": tid})
+    if t:
+        delete_object_by_url(t.get("photo_url") or "")
     await db.testimonials.delete_one({"id": tid})
     return {"ok": True}
 
@@ -1417,7 +1459,12 @@ async def create_gallery(inp: GalleryItemInput, _: dict = Depends(require_admin)
 
 @api.delete("/admin/gallery/{gid}")
 async def delete_gallery(gid: str, _: dict = Depends(require_admin)):
-    await db.gallery_items.delete_one({"id": gid}); return {"ok": True}
+    from object_storage import delete_object_by_url
+    g = await db.gallery_items.find_one({"id": gid})
+    if g:
+        delete_object_by_url(g.get("image_url") or "")
+    await db.gallery_items.delete_one({"id": gid})
+    return {"ok": True}
 
 
 @api.get("/admin/discounts")
@@ -1580,8 +1627,19 @@ async def _seed_products_and_assets():
         log.error("Asset copy failed: %s", e)
         return
 
+    from object_storage import put_local_file, storage_configured
+
+    def _media_url(filename: str, folder: str = "products") -> str:
+        local = UPLOAD_DIR / filename
+        if storage_configured() and local.is_file():
+            try:
+                return put_local_file(local, folder=folder, key_name=filename)
+            except Exception:
+                log.exception("Failed to push seed asset %s to object storage", filename)
+        return upload_url(filename)
+
     for i, (name, slug, banner_file) in enumerate(CATEGORIES):
-        banner = upload_url(banner_file)
+        banner = _media_url(banner_file, folder="categories")
         existing = await db.categories.find_one({"slug": slug})
         if not existing:
             await db.categories.insert_one({
@@ -1593,7 +1651,7 @@ async def _seed_products_and_assets():
 
     await db.products.delete_many({})
     for p in PRODUCTS:
-        url = upload_url(p["filename"])
+        url = _media_url(p["filename"], folder="products")
         doc = {
             "id": new_id(), "slug": slugify(p["name"]), "name": p["name"],
             "description": p["description"], "category_slug": p["category_slug"],
@@ -1615,14 +1673,29 @@ async def _seed_products_and_assets():
         await db.products.insert_one(doc)
     log.info("Seeded %d products from Images/", len(PRODUCTS))
 
-    # Refresh site settings with local brand assets
+    # Refresh site settings — prefer object-storage URLs when available
     defaults = default_settings()
+    if storage_configured():
+        hero_file = UPLOAD_DIR / "hero-background.png"
+        if hero_file.is_file():
+            try:
+                hero = put_local_file(hero_file, folder="hero", key_name="hero-background.png")
+                defaults["hero_background_url"] = hero
+                defaults["hero_images"] = [hero]
+            except Exception:
+                log.exception("Hero upload to object storage failed during seed")
+        qr = UPLOAD_DIR / "upi-qr-ritheesh.png"
+        if qr.is_file():
+            try:
+                defaults["gpay_qr_url"] = put_local_file(qr, folder="misc", key_name="upi-qr-ritheesh.png")
+            except Exception:
+                pass
     await db.settings.update_one({"key": "site"}, {"$set": defaults}, upsert=True)
 
     if await db.gallery_items.count_documents({}) == 0:
         for i, fname in enumerate(GALLERY_FILENAMES):
             await db.gallery_items.insert_one({
-                "id": new_id(), "image_url": upload_url(fname), "caption": "", "link_url": "",
+                "id": new_id(), "image_url": _media_url(fname, folder="gallery"), "caption": "", "link_url": "",
                 "sort_order": i, "created_at": now_iso(),
             })
     else:
@@ -1632,7 +1705,7 @@ async def _seed_products_and_assets():
             url = g.get("image_url") or ""
             if "unsplash" in url or "pexels" in url or "emergent" in url:
                 fname = GALLERY_FILENAMES[i % len(GALLERY_FILENAMES)]
-                await db.gallery_items.update_one({"id": g["id"]}, {"$set": {"image_url": upload_url(fname)}})
+                await db.gallery_items.update_one({"id": g["id"]}, {"$set": {"image_url": _media_url(fname, folder="gallery")}})
 
 
 async def _ensure_admin_account():
@@ -1748,29 +1821,52 @@ async def _migrate_upload_urls():
 
 
 async def _ensure_brand_assets():
-    """Sync hero + tees from Images/Hero/bg and force canonical URLs in settings."""
+    """Sync hero + tees from Images/Hero/bg into object storage (or local uploads) and settings."""
+    from object_storage import is_persistent_url, put_local_file, storage_configured
+
     hero_src = ROOT_DIR.parent / "Images" / "Hero" / "bg" / "hero-background.png"
     tees_src = ROOT_DIR.parent / "Images" / "Hero" / "bg" / "coming-soon-tees.png"
     if not hero_src.exists():
         return
+
+    hero_url = None
     try:
-        copy_asset("Hero/bg/hero-background.png", "hero-background.png")
-        if tees_src.exists():
-            copy_asset("Hero/bg/coming-soon-tees.png", "coming-soon-tees.png")
+        if storage_configured():
+            hero_url = put_local_file(hero_src, folder="hero", key_name="hero-background.png")
+            if tees_src.exists():
+                put_local_file(tees_src, folder="misc", key_name="coming-soon-tees.png")
+        else:
+            copy_asset("Hero/bg/hero-background.png", "hero-background.png")
+            if tees_src.exists():
+                copy_asset("Hero/bg/coming-soon-tees.png", "coming-soon-tees.png")
+            hero_url = upload_url("hero-background.png") + "?v=20260803"
     except FileNotFoundError:
         return
+    except Exception:
+        log.exception("Failed to sync brand assets to storage")
+        return
+
     s = await db.settings.find_one({"key": "site"}) or {}
     patch: dict = {}
-    hero = upload_url("hero-background.png") + "?v=20260803"
     defaults = default_settings()
-    legacy_hero = (s.get("hero_background_url") or "").split("?")[0]
-    if (
-        s.get("hero_background_url") != hero
-        or re.search(r"unsplash|pexels|emergent", s.get("hero_background_url") or "", re.I)
-        or legacy_hero.endswith("hero-background.png") and s.get("hero_background_url") != hero
-    ):
-        patch["hero_background_url"] = hero
-        patch["hero_images"] = defaults["hero_images"]
+    current_hero = s.get("hero_background_url") or ""
+
+    # Never overwrite a permanent CDN URL with a relative /uploads path
+    if is_persistent_url(current_hero) and not storage_configured():
+        pass
+    elif hero_url and current_hero != hero_url:
+        # Replace local /uploads hero or mismatched URL with canonical storage URL
+        if (
+            not is_persistent_url(current_hero)
+            or storage_configured()
+            or re.search(r"unsplash|pexels|emergent", current_hero, re.I)
+        ):
+            patch["hero_background_url"] = hero_url
+            if storage_configured():
+                patch["hero_images"] = [hero_url]
+            else:
+                patch["hero_images"] = defaults["hero_images"]
+
     logo = s.get("logo_url") or ""
     if logo and re.search(r"emergent|unsplash|pexels", logo, re.I):
         patch["logo_url"] = ""
@@ -1785,6 +1881,9 @@ async def _ensure_brand_assets():
 @app.on_event("startup")
 async def on_startup():
     global _mongo_ready
+    from object_storage import require_storage_in_production, storage_configured
+    require_storage_in_production()
+    log.info("Object storage configured=%s", storage_configured())
     _mongo_ready = await _verify_mongodb_connection()
     if not _mongo_ready:
         log.error("MongoDB unavailable at startup — serving health checks; DB routes will fail until connected.")
@@ -1810,9 +1909,12 @@ async def root():
 
 
 app.include_router(api)
-# Static uploads — /uploads/ is the canonical public path (Vercel + backend)
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
-app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_legacy")
+# Static uploads — local/dev only. Production media is served from Supabase public URLs.
+if APP_ENV != "production":
+    app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+    app.mount("/api/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads_legacy")
+else:
+    log.info("Production: skipping StaticFiles mounts for /uploads (use Supabase Storage)")
 
 # CORS — explicit origins + Vercel preview regex (never allow_origins="*" with credentials)
 _DEFAULT_CORS_ORIGINS = [

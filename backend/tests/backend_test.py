@@ -71,7 +71,7 @@ class TestHealth:
         assert "sweet-bear-unicorn-keychain" in slugs
         for prod in products:
             assert prod["images"], f"{prod['slug']} missing images"
-            assert prod["images"][0].startswith("/uploads/"), prod["images"][0]
+            assert prod["images"][0].startswith("/uploads/") or prod["images"][0].startswith("https://"), prod["images"][0]
 
 
 def _otp_code_from_send_response(data: dict) -> str:

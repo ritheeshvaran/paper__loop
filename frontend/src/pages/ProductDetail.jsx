@@ -7,12 +7,18 @@ import { fetchProductBySlug, fetchProducts } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatINR } from "@/lib/format";
-import { resolveMedia } from "@/lib/media";
+import { resolveMedia, PLACEHOLDER_MEDIA } from "@/lib/media";
 import { brandAsset, ROOM_TEMPLATES } from "@/lib/assets";
 import { isPurchasable, normalizeProductStatus } from "@/lib/productStatus";
 import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { toast } from "sonner";
+
+const onImgError = (e) => {
+  if (e.currentTarget.dataset.ph) return;
+  e.currentTarget.dataset.ph = "1";
+  e.currentTarget.src = PLACEHOLDER_MEDIA;
+};
 
 const ProductDetail = () => {
   const { slug } = useParams();
@@ -68,12 +74,12 @@ const ProductDetail = () => {
             className="relative aspect-square lg:aspect-[4/5] bg-neutral-100 overflow-hidden"
           >
             {!showRoom ? (
-              <img src={images[activeImg]} alt={product.name} className="w-full h-full object-cover" />
+              <img src={images[activeImg] || PLACEHOLDER_MEDIA} alt={product.name} className="w-full h-full object-cover" onError={onImgError} />
             ) : (
               <div className="relative w-full h-full">
-                <img src={brandAsset(room.asset)} alt="Room preview" className="absolute inset-0 w-full h-full object-cover" />
+                <img src={brandAsset(room.asset)} alt="Room preview" className="absolute inset-0 w-full h-full object-cover" onError={onImgError} />
                 <div className="absolute" style={{ ...room.zone, boxShadow: "0 30px 80px -20px rgba(0,0,0,0.5)" }}>
-                  <img src={resolveMedia(product.images?.[0])} alt="poster overlay" className="w-full h-full object-cover" style={{ filter: "brightness(0.95) contrast(1.05)" }} />
+                  <img src={resolveMedia(product.images?.[0])} alt="poster overlay" className="w-full h-full object-cover" style={{ filter: "brightness(0.95) contrast(1.05)" }} onError={onImgError} />
                 </div>
               </div>
             )}

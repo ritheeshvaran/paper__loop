@@ -8,7 +8,7 @@ Premium youth merchandise — posters and keychains. Editorial e-commerce built 
 - **Backend:** FastAPI, Motor (MongoDB)
 - **Database:** MongoDB Atlas
 - **Email:** [Resend](https://resend.com) (verified domain: `paperloop.shop`)
-- **Images:** Static catalog at `/uploads/*`, admin uploads via backend
+- **Images:** Supabase Storage (public HTTPS URLs). Local `/uploads/*` is dev-only fallback.
 
 ## Quick start
 
@@ -54,7 +54,7 @@ curl -X POST http://localhost:8000/api/debug/test-email -H "Content-Type: applic
 ## Production
 
 - Frontend → **Vercel** (`frontend/`, set `REACT_APP_BACKEND_URL`)
-- Backend → **Railway** or **Render** (persistent volume for `backend/uploads/`)
+- Backend → **Railway** or **Render** + **Supabase Storage** for media
 - Database → **MongoDB Atlas**
 - Email → **Resend** with `FROM_EMAIL=Paper & Loop <noreply@paperloop.shop>`
 

@@ -38,7 +38,7 @@ const Products = () => {
     setUploading(true);
     try {
       const token = localStorage.getItem("pl_token");
-      const res = await fetch(`${API}/admin/upload`, {
+      const res = await fetch(`${API}/admin/upload?folder=products`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: fd,

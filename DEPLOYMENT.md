@@ -7,7 +7,7 @@ This guide deploys **Paper & Loop** with:
 | Frontend (React SPA) | [Vercel](https://vercel.com) |
 | Backend (FastAPI) | [Railway](https://railway.app) or [Render](https://render.com) |
 | Database | [MongoDB Atlas](https://www.mongodb.com/atlas) |
-| Product images | `backend/uploads/` on the backend host (persistent volume) |
+| Product / media images | **Supabase Storage** (public bucket + CDN HTTPS URLs) |
 
 Docker is **not required** in production. Use it locally only if you want a local MongoDB instance.
 
@@ -28,7 +28,7 @@ Docker is **not required** in production. Use it locally only if you want a loca
 
 ## 2. Backend (FastAPI)
 
-Deploy to **Railway** or **Render** with a **persistent disk** for uploads.
+Deploy to **Railway** or **Render**. Do **not** rely on local disk for images — use **Supabase Storage**.
 
 ### Required environment variables
 
@@ -43,6 +43,9 @@ Deploy to **Railway** or **Render** with a **persistent disk** for uploads.
 | `ADMIN_PASSWORD` | `<strong password>` | **Required in production** for admin bootstrap |
 | `RESEND_API_KEY` | `re_...` | **Required for OTP in production** |
 | `FROM_EMAIL` | `Paper & Loop <noreply@paperloop.shop>` | Verified Resend domain sender |
+| `SUPABASE_URL` | `https://xxxx.supabase.co` | **Required for media in production** |
+| `SUPABASE_SERVICE_ROLE_KEY` | `eyJ...` | Service role (server-only) |
+| `SUPABASE_STORAGE_BUCKET` | `paper-loop-media` | Public storage bucket name |
 
 Optional SMTP fallback (local/dev): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`.
 
@@ -52,17 +55,28 @@ Optional SMTP fallback (local/dev): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP
 uvicorn server:app --host 0.0.0.0 --port $PORT
 ```
 
-### Persistent uploads
+### Media storage (Supabase Storage)
 
-Product images live in `backend/uploads/`. On Railway/Render:
+Admin uploads and payment screenshots are stored in **Supabase Storage**, not on the Render/Railway filesystem.
 
-1. Mount a **volume** at `/app/backend/uploads` (or your deploy root + `uploads`).
-2. On first deploy, ensure the `Images/` folder from the repo is present and the server will copy assets on startup when the products collection is empty.
-3. Alternatively run once after deploy:
+1. Create a **public** bucket in the Supabase dashboard (e.g. `paper-loop-media`).
+2. Set `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` on the backend.
+3. Migrate existing MongoDB `/uploads/...` URLs once:
    ```bash
-   python seed_local_products.py
+   cd backend
+   python migrate_media_to_supabase.py
    ```
 
+Stored URLs look like:
+```
+https://xxxx.supabase.co/storage/v1/object/public/paper-loop-media/products/<uuid>_<ts>.png
+https://xxxx.supabase.co/storage/v1/object/public/paper-loop-media/hero/hero-background.png
+https://xxxx.supabase.co/storage/v1/object/public/paper-loop-media/payments/<uuid>_<ts>.png
+```
+
+Folders used: `products/`, `gallery/`, `hero/`, `categories/`, `payments/`, `testimonials/`, `misc/`.
+
+Local `backend/uploads/` is **dev-only** fallback when `APP_ENV=development` and Supabase is unset.
 ### Railway example
 
 ```bash
@@ -139,13 +153,15 @@ Point `paperandloop.com` to Vercel, then add the domain to `CORS_ORIGINS` on the
 ## 4. Post-deploy checklist
 
 - [ ] Backend `/api/` returns `{ "status": "alive" }`
-- [ ] `/api/products` returns 11 real products with `/api/uploads/...` image URLs
-- [ ] `/api/settings` returns `hero_background_url` as a local upload path
-- [ ] Frontend loads hero, shop, and product images from the backend URL
+- [ ] `/api/products` returns products with **HTTPS** image URLs (R2/CDN)
+- [ ] `/api/settings` returns `hero_background_url` as an HTTPS CDN URL
+- [ ] Frontend loads hero, shop, and product images from CDN URLs
 - [ ] Admin login works (`ritheeshvaran2007@gmail.com` — **change password immediately**)
 - [ ] OTP emails send via Resend (or verify `dev_code` is NOT returned in production)
 - [ ] GPay QR and UPI ID configured in Admin → Settings
 - [ ] HTTPS on both frontend and backend
+- [ ] `SUPABASE_*` env vars set; `python migrate_media_to_supabase.py` run once after cutover
+- [ ] Upload a product image, redeploy backend, confirm image still loads
 
 ---
 

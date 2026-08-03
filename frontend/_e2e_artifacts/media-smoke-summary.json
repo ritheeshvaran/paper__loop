@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "pages": [
+    {
+      "page": "home",
+      "heroSrc": "/uploads/logo-paper-loop.png"
+    },
+    {
+      "page": "shop",
+      "productCards": 21
+    },
+    {
+      "page": "pdp",
+      "slug": "kakashi-hatake",
+      "image": "/uploads/tanjiro-kamado.jpg"
+    },
+    {
+      "page": "admin-upload",
+      "status": 200,
+      "url": "/uploads/products/c414cd0e204de974f73753c7e28d7638.png"
+    },
+    {
+      "page": "upload-fetch",
+      "status": 200,
+      "mediaUrl": "http://127.0.0.1:8000/uploads/products/c414cd0e204de974f73753c7e28d7638.png"
+    }
+  ],
+  "failures": [],
+  "consoleErrors": [],
+  "networkFails": []
+}

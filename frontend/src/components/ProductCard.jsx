@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Heart, Plus, Bell } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { formatINR } from "@/lib/format";
-import { resolveMedia } from "@/lib/media";
+import { resolveMedia, PLACEHOLDER_MEDIA } from "@/lib/media";
 import { isPurchasable, normalizeProductStatus } from "@/lib/productStatus";
 
 export const ProductCard = ({ product, index = 0, dark = false }) => {
@@ -40,6 +40,12 @@ export const ProductCard = ({ product, index = 0, dark = false }) => {
   else if (product.is_trending) badges.push({ label: "Trending", cls: "bg-white text-black" });
   else if (product.is_new) badges.push({ label: "New", cls: "bg-black text-white border border-white/10" });
 
+  const onImgError = (e) => {
+    if (e.currentTarget.dataset.ph) return;
+    e.currentTarget.dataset.ph = "1";
+    e.currentTarget.src = PLACEHOLDER_MEDIA;
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 30 }}
@@ -66,6 +72,7 @@ export const ProductCard = ({ product, index = 0, dark = false }) => {
             src={primary}
             alt={product.name}
             loading="lazy"
+            onError={onImgError}
             initial={false}
             animate={{ scale: hover ? 1.08 : 1, opacity: hover ? 0 : 1 }}
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
@@ -76,6 +83,7 @@ export const ProductCard = ({ product, index = 0, dark = false }) => {
             alt=""
             aria-hidden
             loading="lazy"
+            onError={onImgError}
             initial={false}
             animate={{ scale: hover ? 1.03 : 1.1, opacity: hover ? 1 : 0 }}
             transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
