@@ -5,6 +5,7 @@ import { Search, ShoppingBag, User, Menu, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useCart } from "@/context/CartContext";
 import { fetchProducts } from "@/lib/products";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 import { brandAsset } from "@/lib/assets";
 import { asArray } from "@/lib/lists";
@@ -214,7 +215,7 @@ const SearchOverlay = ({ open, onClose }) => {
               {results.map((p) => (
                 <a key={p.id} href={`/product/${p.slug}`} className="group block" data-cursor="View">
                   <div className="aspect-[3/4] overflow-hidden bg-neutral-900">
-                    <img src={resolveMedia(p.images?.[0])} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
+                    <MediaImg src={p.images?.[0]} alt={p.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
                   </div>
                   <div className="mt-2 text-white text-sm font-medium">{p.name}</div>
                   <div className="text-white/60 text-xs uppercase tracking-wider">{p.category_slug}</div>

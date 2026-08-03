@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 
 const Settings = () => {
@@ -56,7 +57,7 @@ const Settings = () => {
           />
         </div>
         <div className="grid grid-cols-3 gap-3">
-          {s.gpay_qr_url && <img src={resolveMedia(s.gpay_qr_url)} alt="QR" className="border border-neutral-800 bg-white p-2" />}
+          {s.gpay_qr_url && <MediaImg src={s.gpay_qr_url} alt="QR" className="border border-neutral-800 bg-white p-2" />}
         </div>
         <button onClick={save} disabled={saving} data-testid="settings-save" className="pl-btn pl-btn-primary">{saving ? "Saving…" : "Save Settings"}</button>
       </div>

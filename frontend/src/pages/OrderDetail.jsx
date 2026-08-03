@@ -12,7 +12,8 @@ import {
   orderStatusMessage,
   CUSTOMER_ORDER_FLOW,
 } from "@/lib/format";
-import { resolveMedia } from "@/lib/media";
+import { MediaImg } from "@/components/MediaImg";
+import { DeliveryAddressDisplay } from "@/components/DeliveryAddressDisplay";
 import { toast } from "sonner";
 import { CheckCircle2, Circle, XCircle } from "lucide-react";
 
@@ -163,7 +164,7 @@ const OrderDetail = () => {
             <ul className="divide-y divide-neutral-200">
               {o.items.map((it) => (
                 <li key={it.product_id} className="py-4 flex gap-4">
-                  <img src={resolveMedia(it.product_image)} alt={it.product_name} className="w-20 h-24 object-cover bg-neutral-100" />
+                  <MediaImg src={it.product_image} alt={it.product_name} className="w-20 h-24 object-cover bg-neutral-100" />
                   <div className="flex-1">
                     <div className="font-display uppercase">{it.product_name}</div>
                     <div className="text-xs text-neutral-500">Qty {it.quantity} × {formatINR(it.final_price)}</div>
@@ -189,12 +190,8 @@ const OrderDetail = () => {
               <span className="font-display uppercase text-sm">Grand Total</span>
               <span className="font-display text-2xl font-bold font-tabular" data-testid="order-grand-total">{formatINR(o.total)}</span>
             </div>
-            <div className="text-xs text-neutral-500">
-              <div className="uppercase tracking-widest mt-4 mb-1">Ship to</div>
-              <div>{o.customer_name}</div>
-              <div>{o.address_line1}{o.address_line2 ? `, ${o.address_line2}` : ""}</div>
-              <div>{o.city}, {o.state} {o.pincode}</div>
-              <div>{o.phone}</div>
+            <div className="pt-4 border-t border-neutral-200">
+              <DeliveryAddressDisplay order={o} testId="order-delivery-address" />
             </div>
             <div className="text-xs">
               <div className="uppercase tracking-widest text-neutral-500">Payment Status</div>
@@ -209,7 +206,7 @@ const OrderDetail = () => {
             {o.payment_screenshot_url && (
               <div className="text-xs">
                 <div className="uppercase tracking-widest text-neutral-500 mb-1">Payment screenshot</div>
-                <img src={resolveMedia(o.payment_screenshot_url)} alt="Payment proof" className="w-full max-h-40 object-contain border border-neutral-200" />
+                <MediaImg src={o.payment_screenshot_url} alt="Payment proof" className="w-full max-h-40 object-contain border border-neutral-200" />
               </div>
             )}
             {["placed", "payment_under_validation"].includes(o.status) && (

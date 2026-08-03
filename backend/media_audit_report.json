@@ -1,0 +1,39 @@
+{
+  "broken_found": [
+    {
+      "collection": "products",
+      "id": "1bd11a71-4129-40dc-9b10-f0e66ed291ff",
+      "name": "Anji",
+      "field": "lifestyle_image",
+      "url": "/uploads/15628ddf-702e-4695-a51d-3f9100ec6ab0.jpg"
+    },
+    {
+      "collection": "categories",
+      "id": "c3f51691-93d6-48e4-ac54-9ae0f2e4f34f",
+      "slug": "marvel",
+      "url": "/uploads/7a713702-b316-4d3d-9736-70e58b1b8137.jpg"
+    }
+  ],
+  "repaired": [
+    {
+      "collection": "products",
+      "id": "1bd11a71-4129-40dc-9b10-f0e66ed291ff",
+      "field": "lifestyle_image",
+      "from": "/uploads/15628ddf-702e-4695-a51d-3f9100ec6ab0.jpg",
+      "to": "https://oljqcxtiwzslhltgfneb.supabase.co/storage/v1/object/public/media/products/86178f1d-7cd2-4773-a2c7-a30a82a16715_1785782714.jpg"
+    },
+    {
+      "collection": "categories",
+      "id": "c3f51691-93d6-48e4-ac54-9ae0f2e4f34f",
+      "from": "/uploads/7a713702-b316-4d3d-9736-70e58b1b8137.jpg",
+      "to": "/uploads/spider-man-iron-spider.jpg"
+    }
+  ],
+  "still_broken": [],
+  "products": 2,
+  "gallery": 0,
+  "testimonials": 0,
+  "categories": 1,
+  "settings": 0,
+  "orders": 0
+}

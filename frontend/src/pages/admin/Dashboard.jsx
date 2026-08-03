@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/lists";
 import { formatINR, formatDate, statusLabel, statusColor } from "@/lib/format";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 
 const StatCard = ({ label, value, sub, delay = 0 }) => (
@@ -70,7 +71,7 @@ const Dashboard = () => {
           <ul className="space-y-3">
             {(data?.top_products || []).map((p) => (
               <li key={p.id} className="flex items-center gap-3">
-                <img src={resolveMedia(p.images?.[0])} alt="" className="w-10 h-12 object-cover bg-neutral-800" />
+                <MediaImg src={p.images?.[0]} alt="" className="w-10 h-12 object-cover bg-neutral-800" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{p.name}</div>
                   <div className="text-[10px] uppercase tracking-widest text-neutral-500">{p.sold} sold</div>

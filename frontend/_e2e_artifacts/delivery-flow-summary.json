@@ -1,0 +1,41 @@
+{
+  "results": [
+    {
+      "name": "register",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "products",
+      "ok": true,
+      "detail": "ferrari-f12"
+    },
+    {
+      "name": "woxsen-validation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "outside-validation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "woxsen-checkout",
+      "ok": true,
+      "detail": "PL-2026-00018"
+    },
+    {
+      "name": "outside-checkout",
+      "ok": true,
+      "detail": "PL-2026-00019"
+    },
+    {
+      "name": "ui-checkout-toggle",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "passed": true,
+  "woxsenOrder": "PL-2026-00018"
+}

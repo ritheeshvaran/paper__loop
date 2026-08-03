@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { AreaChart, Area, PieChart, Pie, Cell, Tooltip, ResponsiveContainer, XAxis, YAxis, CartesianGrid } from "recharts";
 import { api } from "@/lib/api";
 import { formatINR } from "@/lib/format";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 
 const COLORS = ["#FF6A00", "#0A0A0A", "#8A8A85", "#E5A400", "#1E8E5A", "#6E56CF", "#E5383B", "#3B82F6"];
@@ -94,7 +95,7 @@ const Analytics = () => {
             {(data.top_products || []).map((p, i) => (
               <li key={p.id} className="py-3 flex items-center gap-3">
                 <span className="w-6 text-neutral-500 font-mono text-sm">{String(i + 1).padStart(2, "0")}</span>
-                <img src={resolveMedia(p.images?.[0])} alt="" className="w-10 h-12 object-cover bg-neutral-800" />
+                <MediaImg src={p.images?.[0]} alt="" className="w-10 h-12 object-cover bg-neutral-800" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm truncate">{p.name}</div>
                 </div>

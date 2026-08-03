@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { motion, useScroll, useTransform, AnimatePresence } from "framer-motion";
 import { ArrowRight, ArrowUpRight, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 import { brandAsset } from "@/lib/assets";
 import { asArray } from "@/lib/lists";
@@ -78,28 +79,20 @@ const productText = (p) => `${p?.name || ""} ${p?.description || ""}`.toLowerCas
 /* ── Cinematic Hero ────────────────────────────────────────────────────── */
 const Hero = ({ heroBg, navOffset = 68 }) => {
   const { scrollY } = useScroll();
-  const y = useTransform(scrollY, [0, 600], [0, 70]);
-  const scale = useTransform(scrollY, [0, 600], [1.04, 1.1]);
-  const overlay = useTransform(scrollY, [0, 400], [0.3, 0.48]);
   const contentY = useTransform(scrollY, [0, 400], [0, -36]);
   const contentOpacity = useTransform(scrollY, [0, 380], [1, 0]);
 
   return (
     <section
-      className="relative w-full text-white overflow-hidden"
+      className="relative w-full text-white pl-hero-section"
       style={{ height: "min(100svh, 100vh)" }}
     >
-      <motion.div style={{ y, scale }} className="absolute inset-[-3%]">
-        <img
-          src={heroBg}
-          alt=""
-          className="absolute inset-0 w-full h-full object-cover"
-          style={{ objectPosition: "center 42%" }}
-          fetchPriority="high"
-        />
-        {/* Subtle dark overlay only — readability without decorative gradients */}
-        <motion.div className="absolute inset-0 bg-black" style={{ opacity: overlay }} />
-      </motion.div>
+      <div
+        className="pl-hero-bg absolute inset-0"
+        style={{ backgroundImage: `url("${heroBg}")` }}
+        aria-hidden
+      />
+      <div className="pl-hero-overlay absolute inset-0" aria-hidden />
 
       <motion.div
         style={{ y: contentY, opacity: contentOpacity, paddingTop: navOffset }}
@@ -292,8 +285,8 @@ const CollectorWall = ({ scene, posters }) => {
                   "0 18px 40px rgba(0,0,0,0.55), 0 2px 0 rgba(255,255,255,0.04) inset",
               }}
             >
-              <img
-                src={resolveMedia(f.poster)}
+              <MediaImg
+                src={f.poster}
                 alt=""
                 loading="lazy"
                 className="w-full h-full object-cover"
@@ -529,7 +522,8 @@ const Home = ({ settings }) => {
     [list],
   );
 
-  const heroBg = resolveMedia(settings?.hero_background_url || brandAsset("hero"));
+  // Bundled full-resolution hero (Images/Hero/bg → public/uploads), not compressed remote copies.
+  const heroBg = resolveMedia(brandAsset("hero"));
 
   return (
     <div className="bg-[color:var(--pl-black)]">
@@ -564,8 +558,8 @@ const Home = ({ settings }) => {
               {collections.map((c, i) => {
                 const inner = (
                   <>
-                    <img
-                      src={resolveMedia(c.image)}
+                    <MediaImg
+                      src={c.image}
                       alt={c.label}
                       loading="lazy"
                       className={`absolute inset-0 w-full h-full object-cover transition-transform duration-700 ${c.comingSoon ? "scale-100 opacity-80" : "group-hover:scale-105"}`}
@@ -670,8 +664,8 @@ const Home = ({ settings }) => {
                     className="group relative block aspect-[3/4] overflow-hidden bg-neutral-300"
                     data-cursor="Browse"
                   >
-                    <img
-                      src={resolveMedia(u.cover.images?.[0])}
+                    <MediaImg
+                      src={u.cover.images?.[0]}
                       alt={u.label}
                       loading="lazy"
                       className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"

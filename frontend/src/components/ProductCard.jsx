@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Heart, Plus, Bell } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { formatINR } from "@/lib/format";
-import { resolveMedia, PLACEHOLDER_MEDIA } from "@/lib/media";
+import { onMediaError, productDisplayImages } from "@/lib/media";
 import { isPurchasable, normalizeProductStatus } from "@/lib/productStatus";
 
 export const ProductCard = ({ product, index = 0, dark = false }) => {
@@ -22,8 +22,7 @@ export const ProductCard = ({ product, index = 0, dark = false }) => {
   };
   const onLeave = () => { setTilt({ rx: 0, ry: 0 }); setHover(false); };
 
-  const primary = resolveMedia(product.images?.[0]);
-  const lifestyle = resolveMedia(product.lifestyle_image || product.images?.[1] || product.images?.[0]);
+  const { primary, lifestyle } = productDisplayImages(product);
   const wished = isWishlisted(product.id);
   const status = normalizeProductStatus(product);
   const soldOut = status === "SOLD_OUT";
@@ -40,11 +39,7 @@ export const ProductCard = ({ product, index = 0, dark = false }) => {
   else if (product.is_trending) badges.push({ label: "Trending", cls: "bg-white text-black" });
   else if (product.is_new) badges.push({ label: "New", cls: "bg-black text-white border border-white/10" });
 
-  const onImgError = (e) => {
-    if (e.currentTarget.dataset.ph) return;
-    e.currentTarget.dataset.ph = "1";
-    e.currentTarget.src = PLACEHOLDER_MEDIA;
-  };
+  const onImgError = onMediaError;
 
   return (
     <motion.div

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api, API } from "@/lib/api";
 import { toast } from "sonner";
 import { Eye, EyeOff, Trash2, Star } from "lucide-react";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 import { formatDate } from "@/lib/format";
 
@@ -81,7 +82,7 @@ const Testimonials = () => {
                   — {it.name}{it.location ? ` · ${it.location}` : ""} · {formatDate(it.created_at)}
                 </div>
                 {it.photo_url && (
-                  <img src={resolveMedia(it.photo_url)} alt="" className="mt-2 h-16 w-auto object-cover border border-neutral-700" />
+                  <MediaImg src={it.photo_url} alt="" className="mt-2 h-16 w-auto object-cover border border-neutral-700" />
                 )}
               </div>
               <div className="flex flex-col gap-1">
@@ -134,7 +135,7 @@ const Testimonials = () => {
               />
             </label>
             {g.image_url && (
-              <img src={resolveMedia(g.image_url)} alt="" className="h-10 w-10 object-cover border border-neutral-700" />
+              <MediaImg src={g.image_url} alt="" className="h-10 w-10 object-cover border border-neutral-700" />
             )}
           </div>
           <input placeholder="Caption" value={g.caption} onChange={(e) => setG({ ...g, caption: e.target.value })} className="w-full bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm" />
@@ -145,7 +146,7 @@ const Testimonials = () => {
         <div className="grid grid-cols-3 gap-2">
           {gallery.map((it) => (
             <div key={it.id} className="relative aspect-square bg-neutral-800 group">
-              <img src={resolveMedia(it.image_url)} alt="" className="w-full h-full object-cover" />
+              <MediaImg src={it.image_url} alt="" className="w-full h-full object-cover" />
               <button onClick={() => delG(it.id)} className="absolute top-1 right-1 p-1 bg-black/70 text-white opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
             </div>
           ))}

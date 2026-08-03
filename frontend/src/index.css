@@ -234,6 +234,22 @@ body {
     box-shadow: 0 10px 24px rgba(255, 255, 255, 0.12);
 }
 
+/* Homepage hero background — crisp full-res cover, no blur/scale on artwork */
+.pl-hero-section {
+    overflow: hidden;
+}
+.pl-hero-bg {
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    transform: none;
+    filter: none;
+}
+.pl-hero-overlay {
+    background: rgba(0, 0, 0, 0.2);
+    pointer-events: none;
+}
+
 /* Section rhythm */
 .pl-section-dark { background: var(--pl-black); color: var(--pl-off-white); }
 .pl-section-light { background: var(--pl-off-white); color: var(--pl-black); }

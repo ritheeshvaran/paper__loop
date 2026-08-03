@@ -60,3 +60,22 @@ export const resolveMedia = (url) => {
 
   return path;
 };
+
+/** img onError — swap to placeholder once (never loop). */
+export const onMediaError = (e) => {
+  if (e?.currentTarget?.dataset?.ph) return;
+  if (e?.currentTarget) {
+    e.currentTarget.dataset.ph = "1";
+    e.currentTarget.src = PLACEHOLDER_MEDIA;
+  }
+};
+
+/** Primary + hover lifestyle URLs with sane fallbacks. */
+export const productDisplayImages = (product) => {
+  const primary = product?.images?.[0];
+  const lifestyle = product?.lifestyle_image || product?.images?.[1] || primary;
+  return {
+    primary: resolveMedia(primary),
+    lifestyle: resolveMedia(lifestyle),
+  };
+};

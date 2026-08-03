@@ -10,7 +10,9 @@ import {
   paymentStatusColor,
   orderDisplayKey,
 } from "@/lib/format";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
+import { DeliveryAddressDisplay, DeliveryTypeBadge } from "@/components/DeliveryAddressDisplay";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -103,6 +105,7 @@ const OrderDetail = () => {
       <Link to="/admin/orders" className="text-xs uppercase tracking-widest text-neutral-500 hover:text-white">← All orders</Link>
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <h1 className="font-display uppercase text-3xl">{o.order_number}</h1>
+        <DeliveryTypeBadge order={o} dark />
         <span className={`text-[11px] uppercase tracking-widest px-2 py-1 ${statusColor(displayKey)}`} data-testid="admin-order-status">
           {statusLabel(displayKey)}
         </span>
@@ -119,7 +122,7 @@ const OrderDetail = () => {
             <ul className="divide-y divide-neutral-800">
               {o.items.map((it) => (
                 <li key={it.product_id} className="py-3 flex gap-4">
-                  <img src={resolveMedia(it.product_image)} alt="" className="w-14 h-16 object-cover bg-neutral-800" />
+                  <MediaImg src={it.product_image} alt="" className="w-14 h-16 object-cover bg-neutral-800" />
                   <div className="flex-1">
                     <div className="text-sm">{it.product_name}</div>
                     <div className="text-xs text-neutral-500">Qty {it.quantity} × {formatINR(it.final_price)}</div>
@@ -183,12 +186,11 @@ const OrderDetail = () => {
           </div>
 
           <div className="bg-neutral-900 border border-neutral-800 p-5">
-            <h2 className="font-display uppercase text-lg mb-3">Customer</h2>
-            <div className="text-sm space-y-1">
+            <h2 className="font-display uppercase text-lg mb-3">Customer &amp; Delivery</h2>
+            <div className="text-sm space-y-3">
               <div>{o.customer_name}</div>
               <div className="text-neutral-400">{o.customer_email}</div>
-              <div className="text-neutral-400">{o.phone}</div>
-              <div className="text-neutral-400 text-xs mt-2">{o.address_line1}{o.address_line2 ? `, ${o.address_line2}` : ""}, {o.city} {o.state} {o.pincode}</div>
+              <DeliveryAddressDisplay order={o} dark testId="admin-delivery-address" />
             </div>
           </div>
 

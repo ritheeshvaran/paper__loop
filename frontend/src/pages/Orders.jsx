@@ -10,7 +10,8 @@ import {
   paymentStatusLabel,
   orderDisplayKey,
 } from "@/lib/format";
-import { resolveMedia } from "@/lib/media";
+import { MediaImg } from "@/components/MediaImg";
+import { formatDeliveryAddress } from "@/lib/delivery";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -57,13 +58,14 @@ const Orders = () => {
           <ul className="space-y-4">
             {filtered.map((o) => {
               const key = orderDisplayKey(o);
+              const deliveryShort = formatDeliveryAddress(o).short;
               return (
                 <li key={o.id}>
                   <Link to={`/account/orders/${o.id}`} data-testid={`order-row-${o.order_number}`} className="block border border-neutral-200 p-6 hover:border-black transition-colors">
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="flex -space-x-3">
                         {asArray(o.items).slice(0, 3).map((it, i) => (
-                          <img key={i} src={resolveMedia(it.product_image)} alt="" className="w-14 h-14 object-cover border-2 border-white bg-neutral-100" />
+                          <MediaImg key={i} src={it.product_image} alt="" className="w-14 h-14 object-cover border-2 border-white bg-neutral-100" />
                         ))}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -74,6 +76,9 @@ const Orders = () => {
                         <div className="text-xs text-neutral-500 mt-1">
                           {asArray(o.items).length} {asArray(o.items).length > 1 ? "products" : "product"} · Placed {formatDate(o.created_at)}
                         </div>
+                        {deliveryShort && (
+                          <div className="text-xs text-neutral-400 mt-1 truncate">{deliveryShort}</div>
+                        )}
                         {o.delivery_date && key !== "cancelled" && key !== "placed" && (
                           <div className="text-xs mt-1">Expected Delivery: <span className="font-medium">{formatDate(o.delivery_date)}</span></div>
                         )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { api, API } from "@/lib/api";
 import { formatINR } from "@/lib/format";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 import { normalizeProductStatus, parseStockInput, statusLabel } from "@/lib/productStatus";
 import { toast } from "sonner";
@@ -156,7 +157,7 @@ const Products = () => {
             {filtered.map((p) => (
               <tr key={p.id} className="border-t border-neutral-800 hover:bg-neutral-800/50">
                 <td className="p-3 flex items-center gap-3">
-                  <img src={resolveMedia(p.images?.[0])} alt="" className="w-10 h-12 object-cover bg-neutral-800" />
+                  <MediaImg src={p.images?.[0]} alt="" className="w-10 h-12 object-cover bg-neutral-800" />
                   <div>
                     <div>{p.name}</div>
                     <div className="text-xs text-neutral-500 font-mono">{p.slug}</div>
@@ -263,7 +264,7 @@ const Products = () => {
                 <div className="grid grid-cols-4 gap-2 mb-2">
                   {form.images.filter(Boolean).map((u, i) => (
                     <div key={i} className="relative aspect-[3/4] bg-neutral-800 group">
-                      <img src={resolveMedia(u)} alt="" className="w-full h-full object-cover" />
+                      <MediaImg src={u} alt="" className="w-full h-full object-cover" />
                       <button type="button" onClick={() => setForm({ ...form, images: form.images.filter((_, k) => k !== i) })} className="absolute top-1 right-1 p-1 bg-black/80 text-white opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
                     </div>
                   ))}
@@ -280,7 +281,7 @@ const Products = () => {
                 <div className="flex gap-2 items-start">
                   {form.lifestyle_image && (
                     <div className="relative w-24 aspect-[3/4] bg-neutral-800 group shrink-0">
-                      <img src={resolveMedia(form.lifestyle_image)} alt="" className="w-full h-full object-cover" />
+                      <MediaImg src={form.lifestyle_image} alt="" className="w-full h-full object-cover" />
                       <button type="button" onClick={() => setForm({ ...form, lifestyle_image: "" })} className="absolute top-1 right-1 p-1 bg-black/80 text-white opacity-0 group-hover:opacity-100"><Trash2 className="w-3 h-3" /></button>
                     </div>
                   )}

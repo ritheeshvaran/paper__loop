@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "@/lib/api";
 import { formatINR, formatDate, statusLabel, statusColor } from "@/lib/format";
+import { DeliveryTypeBadge } from "@/components/DeliveryAddressDisplay";
 import { toast } from "sonner";
 
 const Orders = () => {
@@ -69,7 +70,10 @@ const Orders = () => {
               <tr key={o.id} data-testid={`order-row-${o.order_number}`} className="border-t border-neutral-800 hover:bg-neutral-800/50">
                 <td className="p-4"><Link to={`/admin/orders/${o.id}`} data-testid={`admin-order-${o.order_number}`} className="font-mono text-xs text-[color:var(--pl-orange)]">{o.order_number}</Link></td>
                 <td>
-                  <div>{o.customer_name}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span>{o.customer_name}</span>
+                    <DeliveryTypeBadge order={o} dark />
+                  </div>
                   <div className="text-xs text-neutral-500">{o.customer_email}</div>
                 </td>
                 <td className="text-neutral-400">{o.items.length}</td>

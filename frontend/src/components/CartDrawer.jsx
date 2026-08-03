@@ -5,6 +5,7 @@ import { X, Trash2, Plus, Minus } from "lucide-react";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatINR } from "@/lib/format";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 
 export const CartDrawer = () => {
@@ -80,7 +81,7 @@ export const CartDrawer = () => {
                     {cart.items.map((it) => (
                       <li key={it.product_id} className="flex gap-4">
                         <Link to={`/product/${it.product.slug}`} onClick={() => setDrawerOpen(false)} className="w-20 h-24 bg-neutral-100 shrink-0">
-                          <img src={resolveMedia(it.product?.images?.[0])} alt={it.product?.name} className="w-full h-full object-cover" />
+                          <MediaImg src={it.product?.images?.[0]} alt={it.product?.name} className="w-full h-full object-cover" />
                         </Link>
                         <div className="flex-1 min-w-0">
                           <div className="text-[10px] uppercase tracking-widest text-neutral-500">{it.product.category_slug}</div>

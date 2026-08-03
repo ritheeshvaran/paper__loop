@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
 
 const Categories = () => {
@@ -47,7 +48,7 @@ const Categories = () => {
               <tr key={c.id} className="border-t border-neutral-800">
                 <td className="p-3">{c.name}</td>
                 <td className="font-mono text-xs">{c.slug}</td>
-                <td>{c.banner_image_url ? <img src={resolveMedia(c.banner_image_url)} alt="" className="w-16 h-10 object-cover" /> : "—"}</td>
+                <td>{c.banner_image_url ? <MediaImg src={c.banner_image_url} alt="" className="w-16 h-10 object-cover" /> : "—"}</td>
                 <td className="text-right pr-3">
                   <button onClick={() => del(c.id)} className="p-2 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
                 </td>

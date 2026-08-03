@@ -108,11 +108,15 @@ try {
   const order = await api("POST", "/orders/checkout", {
     token: customerToken,
     body: {
+      delivery_type: "outside_woxsen",
+      customer_name: "QA Customer",
       address_line1: "12 Test Street",
+      address_line2: "Apt 1",
       city: "Chennai",
       state: "TN",
       pincode: "600001",
       phone: "9876543210",
+      country: "India",
     },
   });
   orderId = order.id;

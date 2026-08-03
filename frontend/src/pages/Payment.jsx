@@ -4,7 +4,9 @@ import { motion } from "framer-motion";
 import { Copy, CheckCircle2, Upload } from "lucide-react";
 import { api } from "@/lib/api";
 import { formatINR } from "@/lib/format";
+import { MediaImg } from "@/components/MediaImg";
 import { resolveMedia } from "@/lib/media";
+import { DeliveryAddressDisplay } from "@/components/DeliveryAddressDisplay";
 import { toast } from "sonner";
 
 /** Canonical UPI payment details — only this QR/UPI is used at checkout. */
@@ -83,6 +85,10 @@ const Payment = ({ settings }) => {
           <p className="sr-only">Using canonical UPI {upiId}</p>
         )}
 
+        <div className="mt-8 border border-neutral-200 p-6" data-testid="payment-delivery-review">
+          <DeliveryAddressDisplay order={order} />
+        </div>
+
         <div className="mt-10 grid md:grid-cols-2 gap-8">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="border border-neutral-200 p-6 text-center">
             <div className="text-[11px] uppercase tracking-widest text-neutral-500 mb-4">Scan with any UPI app</div>
@@ -124,7 +130,7 @@ const Payment = ({ settings }) => {
               <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" onChange={onUpload} disabled={uploading} data-testid="payment-screenshot-input" required={!screenshotUrl} />
             </label>
             {screenshotUrl && (
-              <img src={resolveMedia(screenshotUrl)} alt="Payment proof" className="mt-3 w-full max-h-40 object-contain border border-neutral-200" data-testid="payment-screenshot-preview" />
+              <MediaImg src={screenshotUrl} alt="Payment proof" className="mt-3 w-full max-h-40 object-contain border border-neutral-200" data-testid="payment-screenshot-preview" />
             )}
             {!screenshotUrl && (
               <p className="text-xs text-red-600 mt-2" data-testid="screenshot-required-hint">Screenshot is required before submitting.</p>

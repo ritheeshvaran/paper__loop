@@ -7,18 +7,15 @@ import { fetchProductBySlug, fetchProducts } from "@/lib/products";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { formatINR } from "@/lib/format";
-import { resolveMedia, PLACEHOLDER_MEDIA } from "@/lib/media";
+import { MediaImg } from "@/components/MediaImg";
+import { resolveMedia, PLACEHOLDER_MEDIA, onMediaError } from "@/lib/media";
 import { brandAsset, ROOM_TEMPLATES } from "@/lib/assets";
 import { isPurchasable, normalizeProductStatus } from "@/lib/productStatus";
 import { ProductCard } from "@/components/ProductCard";
 import { FadeUp } from "@/components/Reveal";
 import { toast } from "sonner";
 
-const onImgError = (e) => {
-  if (e.currentTarget.dataset.ph) return;
-  e.currentTarget.dataset.ph = "1";
-  e.currentTarget.src = PLACEHOLDER_MEDIA;
-};
+const onImgError = onMediaError;
 
 const ProductDetail = () => {
   const { slug } = useParams();

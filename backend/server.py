@@ -21,7 +21,7 @@ from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.staticfiles import StaticFiles
 from mongo_client import create_motor_client, normalize_mongo_url
-from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator
+from pydantic import BaseModel, Field, EmailStr, ConfigDict, field_validator, model_validator
 from starlette.middleware.cors import CORSMiddleware
 from seed_data import (
     CATEGORIES,
@@ -141,6 +141,39 @@ async def _verify_mongodb_connection() -> bool:
 client = create_motor_client(MONGO_URL)
 db = client[DB_NAME]
 _mongo_ready = False
+_categories_by_slug: dict = {}
+
+
+async def _refresh_categories_cache() -> None:
+    global _categories_by_slug
+    cats = await db.categories.find({}, {"_id": 0}).to_list(200)
+    _categories_by_slug = {c["slug"]: c for c in cats if c.get("slug")}
+
+
+def _validate_media_field(url: Optional[str], *, field: str, required: bool = False) -> None:
+    from media_validation import validate_media_url_or_raise
+
+    if not url or not str(url).strip():
+        if required:
+            raise HTTPException(400, f"{field} is required")
+        return
+    try:
+        validate_media_url_or_raise(str(url).strip(), field=field)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+def _validate_product_media(inp: ProductInput) -> None:
+    from media_validation import validate_media_urls_or_raise
+
+    urls = [u for u in (inp.images or []) if u and str(u).strip()]
+    if urls:
+        try:
+            validate_media_urls_or_raise(urls, field="images")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+    if inp.lifestyle_image and str(inp.lifestyle_image).strip():
+        _validate_media_field(inp.lifestyle_image, field="lifestyle_image")
 
 app = FastAPI(title="Paper & Loop API")
 api = APIRouter(prefix="/api")
@@ -307,13 +340,64 @@ class CartItemInput(BaseModel):
 
 
 class CheckoutInput(BaseModel):
+    delivery_type: Literal["woxsen_university", "outside_woxsen"] = "outside_woxsen"
     order_note: str = ""
-    address_line1: str
+    customer_name: Optional[str] = None
+    phone: str = ""
+    email: Optional[EmailStr] = None
+    # Woxsen campus delivery
+    tower: str = ""
+    room_number: str = ""
+    delivery_instructions: str = ""
+    # Outside delivery (postal address)
+    address_line1: str = ""
     address_line2: str = ""
-    city: str
-    state: str
-    pincode: str
-    phone: str
+    address_line3: str = ""
+    landmark: str = ""
+    city: str = ""
+    state: str = ""
+    pincode: str = ""
+    country: str = "India"
+
+    @field_validator("delivery_type", mode="before")
+    @classmethod
+    def normalize_delivery_type(cls, v):
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "outside_woxsen"
+        s = str(v).strip().lower().replace(" ", "_")
+        if s in ("woxsen", "woxsen_university", "campus"):
+            return "woxsen_university"
+        if s in ("outside", "outside_woxsen", "home", "postal"):
+            return "outside_woxsen"
+        return v
+
+    @model_validator(mode="after")
+    def validate_by_delivery_type(self):
+        name = (self.customer_name or "").strip()
+        phone = (self.phone or "").strip()
+        if self.delivery_type == "woxsen_university":
+            if not name:
+                raise ValueError("Full name is required")
+            if not phone:
+                raise ValueError("Mobile number is required")
+            if not (self.tower or "").strip():
+                raise ValueError("Tower / Hostel is required")
+            if not (self.room_number or "").strip():
+                raise ValueError("Room number is required")
+        else:
+            if not name:
+                raise ValueError("Full name is required")
+            if not phone:
+                raise ValueError("Mobile number is required")
+            if not (self.address_line1 or "").strip():
+                raise ValueError("Address line 1 is required")
+            if not (self.city or "").strip():
+                raise ValueError("City is required")
+            if not (self.state or "").strip():
+                raise ValueError("State is required")
+            if not (self.pincode or "").strip():
+                raise ValueError("Pincode is required")
+        return self
 
 
 class SubmitPaymentInput(BaseModel):
@@ -675,16 +759,23 @@ async def create_category(inp: CategoryInput, _: dict = Depends(require_admin)):
     slug = inp.slug or slugify(inp.name)
     if await db.categories.find_one({"slug": slug}):
         raise HTTPException(400, "Slug already exists")
+    if inp.banner_image_url:
+        _validate_media_field(inp.banner_image_url, field="banner_image_url")
     doc = {"id": new_id(), "slug": slug, "name": inp.name,
            "banner_image_url": inp.banner_image_url, "sort_order": inp.sort_order,
            "created_at": now_iso()}
-    await db.categories.insert_one(doc); doc.pop("_id", None); return doc
+    await db.categories.insert_one(doc); doc.pop("_id", None)
+    await _refresh_categories_cache()
+    return doc
 
 
 @api.put("/admin/categories/{cat_id}")
 async def update_category(cat_id: str, inp: CategoryInput, _: dict = Depends(require_admin)):
+    if inp.banner_image_url:
+        _validate_media_field(inp.banner_image_url, field="banner_image_url")
     patch = inp.model_dump(exclude_unset=True)
     await db.categories.update_one({"id": cat_id}, {"$set": patch})
+    await _refresh_categories_cache()
     return strip_id(await db.categories.find_one({"id": cat_id}))
 
 
@@ -718,6 +809,9 @@ def _assert_product_purchasable(product: dict) -> None:
 
 
 def _compute_price(p: dict) -> dict:
+    from media_validation import sanitize_product_media
+
+    p = sanitize_product_media(p, _categories_by_slug, verify_remote=False)
     disc = float(p.get("discount_percent") or 0)
     price = float(p["price"])
     final = round(price * (1 - disc / 100), 2) if disc else price
@@ -769,6 +863,7 @@ async def admin_list_products(_: dict = Depends(require_admin)):
 
 @api.post("/admin/products")
 async def create_product(inp: ProductInput, admin: dict = Depends(require_admin)):
+    _validate_product_media(inp)
     slug = inp.slug or slugify(inp.name)
     if await db.products.find_one({"slug": slug}):
         slug = f"{slug}-{new_id()[:4]}"
@@ -784,6 +879,7 @@ async def create_product(inp: ProductInput, admin: dict = Depends(require_admin)
 async def update_product(pid: str, inp: ProductInput, admin: dict = Depends(require_admin)):
     existing = await db.products.find_one({"id": pid})
     if not existing: raise HTTPException(404, "Not found")
+    _validate_product_media(inp)
     patch = inp.model_dump(exclude_unset=True)
     patch["updated_at"] = now_iso()
     await db.products.update_one({"id": pid}, {"$set": patch})
@@ -1021,15 +1117,18 @@ async def checkout(inp: CheckoutInput, user: dict = Depends(get_current_user)):
         if stock < it["quantity"]:
             raise HTTPException(400, f"Insufficient stock for {p.get('name', 'item')}")
     order_id = new_id()
+    customer_name = (inp.customer_name or user.get("name") or "").strip()
+    customer_email = str(inp.email or user.get("email") or "")
+    phone = inp.phone.strip()
+
     order = {
         "id": order_id,
         "order_number": await _next_order_number(),
         "user_id": user["id"],
-        "customer_name": user["name"],
-        "customer_email": user["email"],
-        "phone": inp.phone,
-        "address_line1": inp.address_line1, "address_line2": inp.address_line2,
-        "city": inp.city, "state": inp.state, "pincode": inp.pincode,
+        "delivery_type": inp.delivery_type,
+        "customer_name": customer_name,
+        "customer_email": customer_email,
+        "phone": phone,
         "items": [{
             "product_id": it["product_id"],
             "product_name": it["product"]["name"],
@@ -1049,6 +1148,38 @@ async def checkout(inp: CheckoutInput, user: dict = Depends(get_current_user)):
         "timeline": [{"status": "placed", "at": now_iso(), "note": "Order placed"}],
         "created_at": now_iso(), "updated_at": now_iso(),
     }
+
+    if inp.delivery_type == "woxsen_university":
+        tower = inp.tower.strip()
+        room = inp.room_number.strip()
+        instructions = (inp.delivery_instructions or "").strip()
+        order.update({
+            "tower": tower,
+            "room_number": room,
+            "delivery_instructions": instructions or None,
+            "address_line1": "Woxsen University",
+            "address_line2": f"Tower: {tower}, Room: {room}",
+            "address_line3": None,
+            "landmark": None,
+            "city": "Woxsen University Campus",
+            "state": "Telangana",
+            "pincode": "",
+            "country": "India",
+        })
+    else:
+        order.update({
+            "tower": None,
+            "room_number": None,
+            "delivery_instructions": None,
+            "address_line1": inp.address_line1.strip(),
+            "address_line2": (inp.address_line2 or "").strip() or None,
+            "address_line3": (inp.address_line3 or "").strip() or None,
+            "landmark": (inp.landmark or "").strip() or None,
+            "city": inp.city.strip(),
+            "state": inp.state.strip(),
+            "pincode": inp.pincode.strip(),
+            "country": (inp.country or "India").strip() or "India",
+        })
     await db.orders.insert_one(order)
     for it in cart["items"]:
         result = await db.products.update_one(
@@ -1368,6 +1499,8 @@ async def admin_list_testimonials(_: dict = Depends(require_admin)):
 
 @api.post("/admin/testimonials")
 async def create_testimonial(inp: TestimonialInput, _: dict = Depends(require_admin)):
+    if inp.photo_url:
+        _validate_media_field(inp.photo_url, field="photo_url")
     doc = inp.model_dump()
     doc.update({
         "id": new_id(),
@@ -1452,6 +1585,7 @@ async def list_gallery():
 
 @api.post("/admin/gallery")
 async def create_gallery(inp: GalleryItemInput, _: dict = Depends(require_admin)):
+    _validate_media_field(inp.image_url, field="image_url", required=True)
     doc = inp.model_dump()
     doc.update({"id": new_id(), "created_at": now_iso()})
     await db.gallery_items.insert_one(doc); doc.pop("_id", None); return doc
@@ -1548,6 +1682,13 @@ async def get_settings():
 @api.put("/admin/settings")
 async def update_settings(inp: SettingsUpdate, admin: dict = Depends(require_admin)):
     patch = {k: v for k, v in inp.model_dump().items() if v is not None}
+    for field in ("logo_url", "hero_background_url", "gpay_qr_url"):
+        if field in patch and patch[field]:
+            _validate_media_field(patch[field], field=field)
+    if patch.get("hero_images"):
+        for i, u in enumerate(patch["hero_images"]):
+            if u:
+                _validate_media_field(u, field=f"hero_images[{i}]")
     if patch:
         await db.settings.update_one({"key": "site"}, {"$set": patch}, upsert=True)
         await _log(admin, "settings_updated", "settings", "site", None, list(patch.keys()))
@@ -1889,6 +2030,7 @@ async def on_startup():
         log.error("MongoDB unavailable at startup — serving health checks; DB routes will fail until connected.")
         return
     await ensure_indexes(db)
+    await _refresh_categories_cache()
     await seed_if_empty()
     await _release_expired_reservations()
 
